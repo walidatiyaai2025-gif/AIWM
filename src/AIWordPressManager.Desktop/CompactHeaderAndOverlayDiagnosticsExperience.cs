@@ -3,19 +3,19 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
-/// Keeps the main header compact and records every legacy surface that attempts to appear automatically.
-/// Secondary commands remain accessible through a single More menu.
+/// Keeps the main header compact without intercepting the Loaded event of every WPF element.
+/// The previous global FrameworkElement handler could inspect and collapse a parent container
+/// while the visual tree was still being created, resulting in a fully black main window.
 /// </summary>
 internal static class CompactHeaderAndOverlayDiagnosticsExperience
 {
     private static readonly ConditionalWeakTable<MainWindow, HeaderState> Attached = new();
+
     private static readonly string[] SecondaryButtonLabels =
     [
         "Recommendations",
@@ -26,93 +26,43 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
         "Developer Tools"
     ];
 
-    private static readonly string[] ForbiddenSurfaceTokens =
-    [
-        "Guided workspace",
-        "Journey completion",
-        "Quick Fix Queue",
-        "approved change",
-        "Live operations",
-        "AI Copilot Inbox",
-        "MEMORY COOLING MODE",
-        "Cooling memory"
-    ];
-
     [ModuleInitializer]
     internal static void Initialize()
     {
+        // Only observe MainWindow. Never register a class handler for every FrameworkElement.
         EventManager.RegisterClassHandler(
             typeof(MainWindow),
             FrameworkElement.LoadedEvent,
             new RoutedEventHandler(OnMainWindowLoaded),
             true);
-
-        EventManager.RegisterClassHandler(
-            typeof(FrameworkElement),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnAnyElementLoaded),
-            true);
     }
 
     private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
-        if (Attached.TryGetValue(window, out _)) return;
-        if (window.Content is not Grid root) return;
+        if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window))
+            return;
 
-        var host = FindTopBar(root);
-        if (host is null) return;
+        if (Attached.TryGetValue(window, out _))
+            return;
 
-        var state = new HeaderState(window, host);
-        Attached.Add(window, state);
-        state.ApplyCompactMode();
-    }
+        if (window.Content is not DependencyObject root)
+            return;
 
-    private static void OnAnyElementLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement element) return;
-        if (element is MainWindow) return;
-
-        var text = ReadVisibleText(element);
-        if (string.IsNullOrWhiteSpace(text)) return;
-        if (!ForbiddenSurfaceTokens.Any(token => text.Contains(token, StringComparison.OrdinalIgnoreCase))) return;
-
-        Suppress(element);
-        WriteDiagnostic(element, text);
-    }
-
-    private static void Suppress(FrameworkElement element)
-    {
-        element.IsHitTestVisible = false;
-        element.Focusable = false;
-        element.Visibility = Visibility.Collapsed;
-        Panel.SetZIndex(element, -10000);
-
-        if (element.Parent is Popup popup)
+        // Allow WPF to finish creating and measuring the complete visual tree first.
+        window.Dispatcher.BeginInvoke(new Action(() =>
         {
-            popup.IsOpen = false;
-            popup.StaysOpen = false;
-        }
-    }
+            if (Attached.TryGetValue(window, out _))
+                return;
 
-    private static void WriteDiagnostic(FrameworkElement element, string text)
-    {
-        try
-        {
-            var directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "AIWordPressManager",
-                "Logs");
-            Directory.CreateDirectory(directory);
-            var file = Path.Combine(directory, "auto-overlay-attempts.log");
-            var page = (System.Windows.Application.Current?.MainWindow?.DataContext as MainWindowViewModel)?.CurrentPage ?? "Unknown";
-            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} | Page={page} | Type={element.GetType().FullName} | Name={element.Name} | Text={Normalize(text)}{Environment.NewLine}";
-            File.AppendAllText(file, line, Encoding.UTF8);
-        }
-        catch
-        {
-            // Diagnostics must never interrupt the user interface.
-        }
+            var host = FindTopBar(root);
+            if (host is null)
+                return;
+
+            var state = new HeaderState(window, host);
+            Attached.Add(window, state);
+            state.ApplyCompactMode();
+            WriteStartupDiagnostic("Compact header initialized safely.");
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     private sealed class HeaderState(MainWindow window, StackPanel host)
@@ -123,7 +73,8 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
         public void ApplyCompactMode()
         {
             CollectSecondaryButtons();
-            if (_hiddenButtons.Count == 0 || _moreButton is not null) return;
+            if (_hiddenButtons.Count == 0 || _moreButton is not null)
+                return;
 
             _moreButton = new Button
             {
@@ -134,9 +85,9 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
                 MinHeight = 26,
                 Tag = "CompactHeaderMoreButton"
             };
+
             _moreButton.Click += (_, _) => OpenMenu();
             host.Children.Insert(Math.Max(0, host.Children.Count - 1), _moreButton);
-
             window.SizeChanged += (_, _) => RefreshCompactMode();
         }
 
@@ -144,20 +95,27 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
         {
             CollectSecondaryButtons();
             if (_moreButton is not null)
-                _moreButton.Visibility = _hiddenButtons.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                _moreButton.Visibility = _hiddenButtons.Count > 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
         }
 
         private void CollectSecondaryButtons()
         {
             foreach (var button in host.Children.OfType<Button>().ToArray())
             {
-                if (ReferenceEquals(button, _moreButton)) continue;
+                if (ReferenceEquals(button, _moreButton))
+                    continue;
+
                 var label = Convert.ToString(button.Content)?.Trim();
-                if (string.IsNullOrWhiteSpace(label)) continue;
+                if (string.IsNullOrWhiteSpace(label))
+                    continue;
 
                 var key = SecondaryButtonLabels.FirstOrDefault(x =>
                     label.Contains(x, StringComparison.OrdinalIgnoreCase));
-                if (key is null) continue;
+
+                if (key is null)
+                    continue;
 
                 _hiddenButtons[key] = button;
                 button.Visibility = Visibility.Collapsed;
@@ -167,7 +125,9 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
 
         private void OpenMenu()
         {
-            if (_moreButton is null) return;
+            if (_moreButton is null)
+                return;
+
             var menu = new ContextMenu { PlacementTarget = _moreButton };
 
             foreach (var pair in _hiddenButtons.OrderBy(x => Array.IndexOf(SecondaryButtonLabels, x.Key)))
@@ -179,81 +139,98 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
                     IsEnabled = source.IsEnabled,
                     ToolTip = source.ToolTip
                 };
+
                 item.Click += (_, _) =>
                 {
                     if (source.IsEnabled)
                         source.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, source));
                 };
+
                 menu.Items.Add(item);
             }
 
             menu.Items.Add(new Separator());
-            var openLog = new MenuItem { Header = "Open auto-popup diagnostics log" };
+
+            var openLog = new MenuItem { Header = "Open UI startup diagnostics log" };
             openLog.Click += (_, _) => OpenDiagnosticsLog();
             menu.Items.Add(openLog);
 
             _moreButton.ContextMenu = menu;
             menu.IsOpen = true;
         }
-
-        private static void OpenDiagnosticsLog()
-        {
-            try
-            {
-                var file = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "AIWordPressManager",
-                    "Logs",
-                    "auto-overlay-attempts.log");
-                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                if (!File.Exists(file))
-                    File.WriteAllText(file, "No blocked auto-overlay attempts have been recorded yet." + Environment.NewLine, Encoding.UTF8);
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(file) { UseShellExecute = true });
-            }
-            catch
-            {
-                // Opening diagnostics is optional.
-            }
-        }
     }
 
-    private static string ReadVisibleText(FrameworkElement element)
+    private static void WriteStartupDiagnostic(string message)
     {
-        if (element is TextBlock textBlock) return textBlock.Text ?? string.Empty;
-        if (element is ContentControl contentControl && contentControl.Content is string text) return text;
-
-        var builder = new StringBuilder();
-        foreach (var textElement in Enumerate<TextBlock>(element).Take(25))
+        try
         {
-            if (!string.IsNullOrWhiteSpace(textElement.Text))
-                builder.Append(textElement.Text).Append(' ');
+            var file = GetDiagnosticsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.AppendAllText(
+                file,
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} | {message}{Environment.NewLine}",
+                Encoding.UTF8);
         }
-        return builder.ToString();
+        catch
+        {
+            // Diagnostics must never interrupt startup.
+        }
     }
 
-    private static string Normalize(string value) =>
-        string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Trim();
+    private static void OpenDiagnosticsLog()
+    {
+        try
+        {
+            var file = GetDiagnosticsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+
+            if (!File.Exists(file))
+                File.WriteAllText(file, "No UI startup diagnostics have been recorded yet." + Environment.NewLine, Encoding.UTF8);
+
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(file) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Opening diagnostics is optional.
+        }
+    }
+
+    private static string GetDiagnosticsPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AIWordPressManager",
+        "Logs",
+        "ui-startup.log");
 
     private static StackPanel? FindTopBar(DependencyObject root)
     {
         foreach (var panel in Enumerate<StackPanel>(root))
         {
-            if (panel.Orientation != Orientation.Horizontal) continue;
-            if (panel.Children.OfType<FrameworkElement>()
+            if (panel.Orientation != Orientation.Horizontal)
+                continue;
+
+            var hasActiveLabel = panel.Children
+                .OfType<FrameworkElement>()
                 .SelectMany(Enumerate<TextBlock>)
-                .Any(x => x.Text?.Contains("Active:", StringComparison.OrdinalIgnoreCase) == true))
+                .Any(x => x.Text?.Contains("Active:", StringComparison.OrdinalIgnoreCase) == true);
+
+            if (hasActiveLabel)
                 return panel;
         }
+
         return null;
     }
 
     private static IEnumerable<T> Enumerate<T>(DependencyObject root) where T : DependencyObject
     {
-        if (root is T typed) yield return typed;
+        if (root is T typed)
+            yield return typed;
+
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
         {
             var child = VisualTreeHelper.GetChild(root, index);
-            foreach (var nested in Enumerate<T>(child)) yield return nested;
+            foreach (var nested in Enumerate<T>(child))
+                yield return nested;
         }
     }
 }
