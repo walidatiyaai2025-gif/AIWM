@@ -50,6 +50,26 @@ public partial class App : System.Windows.Application
                 await scope.ServiceProvider.GetRequiredService<IDatabaseInitializationService>().InitializeAsync();
             }
 
+            progress.Report(StartupProgress.Create(42, "Securing workspace", "Loading users, roles, and permissions"));
+            var paths = _host.Services.GetRequiredService<IApplicationPathService>();
+            var databasePath = paths.GetDatabasePath();
+            await UserSecurityStore.EnsureCreatedAsync(databasePath);
+
+            splash.Hide();
+            var loginWindow = new SystemLoginWindow(databasePath);
+            var loginAccepted = loginWindow.ShowDialog() == true && loginWindow.AuthenticatedUser is not null;
+            if (!loginAccepted)
+            {
+                try { loginWindow.Close(); } catch { }
+                try { splash.Close(); } catch { }
+                Shutdown(0);
+                return;
+            }
+
+            SystemSecuritySession.SetAuthenticatedUser(loginWindow.AuthenticatedUser!);
+            splash.Show();
+            progress.Report(StartupProgress.Create(48, "Signed in", $"Welcome {SystemSecuritySession.CurrentDisplayName} ({SystemSecuritySession.CurrentRoleName})"));
+
             var mainViewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
             await mainViewModel.InitializeAsync(progress);
 
@@ -58,7 +78,6 @@ public partial class App : System.Windows.Application
             MainWindow.Show();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
 
-            // Do not keep the splash open while non-essential screens hydrate.
             _ = Dispatcher.InvokeAsync(async () =>
             {
                 try
@@ -117,7 +136,7 @@ public partial class App : System.Windows.Application
             var paths = services.GetRequiredService<IApplicationPathService>();
             var logPath = System.IO.Path.Combine(paths.GetLogsDirectory(), "startup-history.log");
             var process = System.Diagnostics.Process.GetCurrentProcess();
-            var line = $"{DateTimeOffset.Now:O} | READY | PID={Environment.ProcessId} | WorkingSetMB={process.WorkingSet64 / 1024d / 1024d:N1}{Environment.NewLine}";
+            var line = $"{DateTimeOffset.Now:O} | READY | PID={Environment.ProcessId} | USER={SystemSecuritySession.CurrentUserName} | ROLE={SystemSecuritySession.CurrentRoleName} | WorkingSetMB={process.WorkingSet64 / 1024d / 1024d:N1}{Environment.NewLine}";
             await System.IO.File.AppendAllTextAsync(logPath, line);
         }
         catch
@@ -125,7 +144,6 @@ public partial class App : System.Windows.Application
             // Startup telemetry must never block the application.
         }
     }
-
 
     private void RegisterGlobalExceptionHandlers()
     {
@@ -148,6 +166,7 @@ public partial class App : System.Windows.Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        SystemSecuritySession.SignOut();
         try { ProcessTreeCleanup.KillDescendantsOfCurrentProcess(); } catch { }
         if (_host is not null)
         {
