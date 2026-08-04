@@ -235,9 +235,9 @@ namespace AIWordPressManager.Desktop
                 Foreground = ResolveBrush(window, "PrimaryBrush", Brushes.DodgerBlue)
             });
             var headline = new TextBlock { FontSize = 20, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 5, 0, 0) };
-            headline.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneyHeadline"));
+            headline.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneyHeadline") { Mode = BindingMode.OneWay });
             var summary = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 18, 0), Foreground = ResolveBrush(window, "TextSecondaryBrush", Brushes.DimGray) };
-            summary.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneySummary"));
+            summary.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneySummary") { Mode = BindingMode.OneWay });
             titlePanel.Children.Add(headline);
             titlePanel.Children.Add(summary);
             header.Children.Add(titlePanel);
@@ -249,29 +249,29 @@ namespace AIWordPressManager.Desktop
                 VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(continueButton, 1);
-            continueButton.SetBinding(Button.ContentProperty, new Binding("CurrentJourneyActionLabel"));
-            continueButton.SetBinding(Button.CommandProperty, new Binding("ContinueJourneyCommand"));
+            continueButton.SetBinding(Button.ContentProperty, new Binding("CurrentJourneyActionLabel") { Mode = BindingMode.OneWay });
+            continueButton.SetBinding(Button.CommandProperty, new Binding("ContinueJourneyCommand") { Mode = BindingMode.OneWay });
             header.Children.Add(continueButton);
             root.Children.Add(header);
 
             var progress = new ProgressBar { Height = 8, Maximum = 100, Margin = new Thickness(0, 15, 0, 7) };
-            progress.SetBinding(ProgressBar.ValueProperty, new Binding("CompleteJourneyPercent"));
+            progress.SetBinding(ProgressBar.ValueProperty, new Binding("CompleteJourneyPercent") { Mode = BindingMode.OneWay });
             root.Children.Add(progress);
 
             var metrics = new Grid { Margin = new Thickness(0, 0, 0, 12) };
             metrics.ColumnDefinitions.Add(new ColumnDefinition());
             metrics.ColumnDefinitions.Add(new ColumnDefinition());
             var completedText = new TextBlock { FontSize = 11, FontWeight = FontWeights.SemiBold };
-            completedText.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneyCompletedText"));
+            completedText.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneyCompletedText") { Mode = BindingMode.OneWay });
             var remainingText = new TextBlock { FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right, Foreground = ResolveBrush(window, "TextSecondaryBrush", Brushes.DimGray) };
-            remainingText.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneyRemainingText"));
+            remainingText.SetBinding(TextBlock.TextProperty, new Binding("CompleteJourneyRemainingText") { Mode = BindingMode.OneWay });
             Grid.SetColumn(remainingText, 1);
             metrics.Children.Add(completedText);
             metrics.Children.Add(remainingText);
             root.Children.Add(metrics);
 
             var items = new ItemsControl();
-            items.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("CompleteJourneySteps"));
+            items.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("CompleteJourneySteps") { Mode = BindingMode.OneWay });
             var factory = new FrameworkElementFactory(typeof(Border));
             factory.SetValue(Border.MarginProperty, new Thickness(0, 0, 0, 5));
             factory.SetValue(Border.PaddingProperty, new Thickness(10, 8, 10, 8));
@@ -295,8 +295,8 @@ namespace AIWordPressManager.Desktop
             panel.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
 
             var icon = new FrameworkElementFactory(typeof(TextBlock));
-            icon.SetBinding(TextBlock.TextProperty, new Binding("StatusIcon"));
-            icon.SetBinding(TextBlock.ForegroundProperty, new Binding("StatusBrush"));
+            icon.SetBinding(TextBlock.TextProperty, new Binding("StatusIcon") { Mode = BindingMode.OneWay });
+            icon.SetBinding(TextBlock.ForegroundProperty, new Binding("StatusBrush") { Mode = BindingMode.OneWay });
             icon.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
             icon.SetValue(TextBlock.WidthProperty, 26d);
             icon.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
@@ -304,10 +304,10 @@ namespace AIWordPressManager.Desktop
 
             var textPanel = new FrameworkElementFactory(typeof(StackPanel));
             var title = new FrameworkElementFactory(typeof(TextBlock));
-            title.SetBinding(TextBlock.TextProperty, new Binding("Title"));
+            title.SetBinding(TextBlock.TextProperty, new Binding("Title") { Mode = BindingMode.OneWay });
             title.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
             var description = new FrameworkElementFactory(typeof(TextBlock));
-            description.SetBinding(TextBlock.TextProperty, new Binding("Description"));
+            description.SetBinding(TextBlock.TextProperty, new Binding("Description") { Mode = BindingMode.OneWay });
             description.SetValue(TextBlock.FontSizeProperty, 10d);
             description.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
             description.SetValue(TextBlock.OpacityProperty, 0.72d);
