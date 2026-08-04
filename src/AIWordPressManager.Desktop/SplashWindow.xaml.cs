@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -12,6 +13,10 @@ public partial class SplashWindow : Window
     public SplashWindow()
     {
         InitializeComponent();
+
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.3.9";
+        VersionText.Text = $"Version v{version}";
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => ElapsedText.Text = _stopwatch.Elapsed.ToString(@"mm\:ss");
         _timer.Start();
