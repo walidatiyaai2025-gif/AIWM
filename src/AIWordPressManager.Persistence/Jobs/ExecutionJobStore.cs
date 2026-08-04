@@ -1,5 +1,6 @@
 using AIWordPressManager.Application.Abstractions.Persistence;
 using AIWordPressManager.Domain.Entities;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace AIWordPressManager.Persistence.Jobs;
@@ -8,29 +9,45 @@ public sealed class ExecutionJobStore(AppDbContext dbContext) : IExecutionJobSto
 {
     public async Task<Guid> StartAsync(Guid siteId, string jobType, CancellationToken cancellationToken = default)
     {
-        // A failed site registration can leave an Added Site entity in a long-lived
-        // DbContext. The next SaveChanges (often the first synchronization job)
-        // would try to persist that stale entity again and fail on Sites.SiteUrl.
-        // Start each independent job with a clean unit of work.
+        // Job creation must never flush unrelated entities left in a long-lived
+        // DbContext after a failed registration. Insert the job directly so this
+        // operation is isolated from the EF change tracker.
         dbContext.ChangeTracker.Clear();
 
-        var job = new ExecutionJob(siteId, jobType, DateTime.UtcNow);
-        dbContext.ExecutionJobs.Add(job);
+        var jobId = Guid.NewGuid();
+        var utcNow = DateTime.UtcNow;
+        var concurrencyToken = Guid.NewGuid().ToByteArray();
 
-        try
+        const string sql = """
+            INSERT INTO ExecutionJobs
+                (Id, SiteId, JobType, Status, ProgressPercent, CurrentStep,
+                 ErrorDetails, StartedAtUtc, CompletedAtUtc,
+                 CreatedAtUtc, UpdatedAtUtc, ConcurrencyToken)
+            VALUES
+                ($id, $siteId, $jobType, 'Running', 0, 'Starting',
+                 NULL, $startedAtUtc, NULL,
+                 $createdAtUtc, $updatedAtUtc, $concurrencyToken);
+            """;
+
+        var parameters = new object[]
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return job.Id;
-        }
-        catch
-        {
-            dbContext.ChangeTracker.Clear();
-            throw;
-        }
+            new SqliteParameter("$id", jobId),
+            new SqliteParameter("$siteId", siteId),
+            new SqliteParameter("$jobType", jobType),
+            new SqliteParameter("$startedAtUtc", utcNow),
+            new SqliteParameter("$createdAtUtc", utcNow),
+            new SqliteParameter("$updatedAtUtc", utcNow),
+            new SqliteParameter("$concurrencyToken", concurrencyToken)
+        };
+
+        await dbContext.Database.ExecuteSqlRawAsync(sql, parameters, cancellationToken);
+        dbContext.ChangeTracker.Clear();
+        return jobId;
     }
 
     public async Task ReportAsync(Guid jobId, int progressPercent, string currentStep, CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         var job = await Find(jobId, cancellationToken);
         job.ReportProgress(progressPercent, currentStep, DateTime.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -38,6 +55,7 @@ public sealed class ExecutionJobStore(AppDbContext dbContext) : IExecutionJobSto
 
     public async Task CompleteAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         var job = await Find(jobId, cancellationToken);
         job.Complete(DateTime.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -45,6 +63,7 @@ public sealed class ExecutionJobStore(AppDbContext dbContext) : IExecutionJobSto
 
     public async Task FailAsync(Guid jobId, string error, CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         var job = await Find(jobId, cancellationToken);
         job.Fail(error, DateTime.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -52,6 +71,7 @@ public sealed class ExecutionJobStore(AppDbContext dbContext) : IExecutionJobSto
 
     public async Task CancelAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         var job = await Find(jobId, cancellationToken);
         job.Cancel(DateTime.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
