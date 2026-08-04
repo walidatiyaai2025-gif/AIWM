@@ -150,14 +150,12 @@ internal static class FloatingWorkspaceManager
             .Select(x => (x.Definition, Panel: x.Panel!))
             .ToArray();
 
-        state.Launcher.Visibility = panels.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (state.Launcher is not null)
+            state.Launcher.Visibility = panels.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var item in panels)
         {
             PreparePanel(item.Panel, item.Definition.Tag, state);
-
-            // The feature timers may set Visibility back to Visible. The manager is the
-            // only authority allowed to expose a workspace panel.
             var shouldShow = state.ActiveTag == item.Definition.Tag;
             item.Panel.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
             item.Panel.IsHitTestVisible = shouldShow;
@@ -166,8 +164,11 @@ internal static class FloatingWorkspaceManager
         if (state.ActiveTag is not null && panels.All(x => x.Definition.Tag != state.ActiveTag))
             state.ActiveTag = null;
 
-        state.Scrim.Visibility = state.ActiveTag is null ? Visibility.Collapsed : Visibility.Visible;
-        state.Scrim.IsHitTestVisible = state.ActiveTag is not null;
+        if (state.Scrim is not null)
+        {
+            state.Scrim.Visibility = state.ActiveTag is null ? Visibility.Collapsed : Visibility.Visible;
+            state.Scrim.IsHitTestVisible = state.ActiveTag is not null;
+        }
     }
 
     private static void PreparePanel(Border panel, string tag, State state)
@@ -180,7 +181,7 @@ internal static class FloatingWorkspaceManager
         panel.IsHitTestVisible = false;
         Panel.SetZIndex(panel, 920);
 
-        if (panel.Child is not StackPanel originalStack) return;
+        if (panel.Child is not StackPanel) return;
         if (FindByTag<Button>(panel, $"Close:{tag}") is not null) return;
 
         var content = panel.Child;
@@ -224,8 +225,8 @@ internal static class FloatingWorkspaceManager
     {
         public MainWindow Window { get; } = window;
         public Grid Root { get; } = root;
-        public required Border Scrim { get; set; }
-        public required Button Launcher { get; set; }
+        public Border? Scrim { get; set; }
+        public Button? Launcher { get; set; }
         public string? ActiveTag { get; set; }
 
         public void OpenPanel(string tag)
