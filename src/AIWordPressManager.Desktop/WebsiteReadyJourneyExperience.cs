@@ -50,7 +50,7 @@ internal static class WebsiteReadyJourneyExperience
     {
         var card = new Border
         {
-            Width = 560,
+            Width = 590,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 18, 0, 0),
@@ -108,6 +108,7 @@ internal static class WebsiteReadyJourneyExperience
         {
             var hasAudit = main.SeoAudit.AuditedItems > 0 || main.SeoAudit.Score > 0;
             var hasProposals = main.SuggestedChanges.Items.Count > 0;
+            var approved = main.SuggestedChanges.ApprovedCount;
 
             if (!hasAudit)
             {
@@ -117,11 +118,22 @@ internal static class WebsiteReadyJourneyExperience
                 return;
             }
 
+            if (!hasProposals)
+            {
+                await main.NavigateCommand.ExecuteAsync("Suggested Changes");
+                if (main.SuggestedChanges.GenerateCommand.CanExecute(null))
+                    await main.SuggestedChanges.GenerateCommand.ExecuteAsync(null);
+                return;
+            }
+
+            if (approved > 0)
+            {
+                await main.NavigateCommand.ExecuteAsync("Execution Center");
+                return;
+            }
+
             await main.NavigateCommand.ExecuteAsync("Suggested Changes");
-            if (!hasProposals && main.SuggestedChanges.GenerateCommand.CanExecute(null))
-                await main.SuggestedChanges.GenerateCommand.ExecuteAsync(null);
-            else
-                await main.SuggestedChanges.LoadAsync();
+            await main.SuggestedChanges.LoadAsync();
         };
         Grid.SetColumn(button, 1);
         grid.Children.Add(button);
@@ -137,6 +149,9 @@ internal static class WebsiteReadyJourneyExperience
         var auditExists = main.SeoAudit.AuditedItems > 0 || main.SeoAudit.Score > 0;
         var proposalsBusy = main.SuggestedChanges.IsBusy;
         var proposalCount = main.SuggestedChanges.Items.Count;
+        var pending = main.SuggestedChanges.PendingCount;
+        var approved = main.SuggestedChanges.ApprovedCount;
+        var rejected = main.SuggestedChanges.RejectedCount;
 
         card.Visibility = connected && synchronized ? Visibility.Visible : Visibility.Collapsed;
         if (card.Visibility != Visibility.Visible) return;
@@ -166,20 +181,33 @@ internal static class WebsiteReadyJourneyExperience
             if (meta is not null) meta.Text = "Converting audit findings into safe, explainable proposals";
             if (action is not null)
             {
-                action.Content = "Generating proposals";
+                action.Content = "Working…";
                 action.IsEnabled = false;
+            }
+            return;
+        }
+
+        if (approved > 0)
+        {
+            if (title is not null) title.Text = $"{approved} approved change(s) ready for execution";
+            if (summary is not null) summary.Text = "Approval changed workflow state only. Review the execution queue, backup plan, verification rules, and evidence requirements before writing to WordPress.";
+            if (meta is not null) meta.Text = $"Approved: {approved} • Pending review: {pending} • Rejected: {rejected}";
+            if (action is not null)
+            {
+                action.Content = "Open execution center";
+                action.IsEnabled = true;
             }
             return;
         }
 
         if (proposalCount > 0)
         {
-            if (title is not null) title.Text = $"{proposalCount} proposed change(s) ready";
-            if (summary is not null) summary.Text = "Review each current value, proposed value, risk level, execution plan, and expected result before approval.";
-            if (meta is not null) meta.Text = $"Pending: {main.SuggestedChanges.PendingCount} • Approved: {main.SuggestedChanges.ApprovedCount} • Rejected: {main.SuggestedChanges.RejectedCount}";
+            if (title is not null) title.Text = $"{proposalCount} proposed change(s) need review";
+            if (summary is not null) summary.Text = "Compare current and proposed values, review risk and expected result, then approve only the changes you want to execute.";
+            if (meta is not null) meta.Text = $"Pending: {pending} • Approved: {approved} • Rejected: {rejected}";
             if (action is not null)
             {
-                action.Content = "Review proposals";
+                action.Content = "Review and approve";
                 action.IsEnabled = true;
             }
             return;
