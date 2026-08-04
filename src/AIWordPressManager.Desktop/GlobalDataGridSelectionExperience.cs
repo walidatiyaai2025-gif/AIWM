@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -41,7 +42,6 @@ internal static class GlobalDataGridSelectionExperience
         if (sender is not DataGrid grid || !ReferenceEquals(e.OriginalSource, grid))
             return;
 
-        // Standardize selection behavior without replacing screen-specific bindings.
         grid.SelectionMode = DataGridSelectionMode.Extended;
         grid.SelectionUnit = DataGridSelectionUnit.FullRow;
         grid.CanUserAddRows = false;
@@ -58,14 +58,16 @@ internal static class GlobalDataGridSelectionExperience
         if (row is null || grid is null)
             return;
 
-        // A checkbox click must also establish the row as the active selection.
-        // Ctrl keeps additive selection; a normal click makes this the current row.
         if ((Keyboard.Modifiers & ModifierKeys.Control) == 0 && !row.IsSelected)
             grid.SelectedItems.Clear();
 
         row.IsSelected = true;
         grid.SelectedItem = row.Item;
-        grid.CurrentCell = new DataGridCellInfo(row.Item, grid.CurrentColumn ?? grid.Columns.FirstOrDefault());
+
+        var column = grid.CurrentColumn ?? grid.Columns.FirstOrDefault();
+        if (column is not null)
+            grid.CurrentCell = new DataGridCellInfo(row.Item, column);
+
         row.Focus();
     }
 
@@ -74,8 +76,6 @@ internal static class GlobalDataGridSelectionExperience
         if (sender is not CheckBox checkBox)
             return;
 
-        // Commit TwoWay and explicit bindings immediately so toolbar counts and commands
-        // react on the first click instead of waiting for focus to leave the cell.
         checkBox.GetBindingExpression(ToggleButton.IsCheckedProperty)?.UpdateSource();
 
         var row = FindAncestor<DataGridRow>(checkBox);
