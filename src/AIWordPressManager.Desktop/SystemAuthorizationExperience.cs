@@ -123,7 +123,6 @@ internal static class SystemAuthorizationExperience
 
         var allowed = SystemSecuritySession.HasPermission(permission);
         button.IsEnabled = allowed;
-        button.Tag = $"Permission:{permission}";
 
         if (!allowed)
             button.ToolTip = SystemSecuritySession.DeniedReason(permission);
