@@ -7,54 +7,51 @@ namespace AIWordPressManager.Desktop;
 
 internal static class SystemSecuritySession
 {
-    private static readonly HashSet<string> ManagerPermissions =
-    [
-        "Dashboard.View", "Sites.Manage", "WordPress.Sync", "Content.View", "Content.Edit",
-        "Seo.Audit", "Suggestions.Generate", "Suggestions.Approve", "Execution.Run",
-        "Execution.Rollback", "Backups.Manage", "Reports.View", "Logs.View", "Settings.Manage"
-    ];
+    private static readonly HashSet<string> CurrentPermissions = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> OperatorPermissions =
-    [
-        "Dashboard.View", "WordPress.Sync", "Content.View", "Seo.Audit",
-        "Execution.Run", "Backups.Manage", "Reports.View"
-    ];
-
-    private static readonly HashSet<string> ViewerPermissions =
-    [
-        "Dashboard.View", "Content.View", "Reports.View"
-    ];
-
-    public static string CurrentUserName { get; private set; } = "Admin";
-    public static string CurrentRoleName { get; private set; } = "Admin";
-    public static bool IsAdmin => CurrentRoleName.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+    public static string CurrentUserName { get; private set; } = "Not signed in";
+    public static string CurrentDisplayName { get; private set; } = "Not signed in";
+    public static string CurrentRoleName { get; private set; } = "None";
+    public static bool IsAdmin { get; private set; }
+    public static bool IsAuthenticated { get; private set; }
 
     public static event EventHandler? SessionChanged;
 
-    public static void SetCurrentUser(string userName, string roleName)
+    public static void SetAuthenticatedUser(AuthenticatedSystemUser user)
     {
-        CurrentUserName = string.IsNullOrWhiteSpace(userName) ? "Unknown" : userName.Trim();
-        CurrentRoleName = string.IsNullOrWhiteSpace(roleName) ? "Viewer" : roleName.Trim();
+        CurrentUserName = user.UserName;
+        CurrentDisplayName = user.DisplayName;
+        CurrentRoleName = user.RoleName;
+        IsAdmin = user.IsSystemAdmin || user.RoleName.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+        IsAuthenticated = true;
+
+        CurrentPermissions.Clear();
+        foreach (var permission in user.Permissions)
+            CurrentPermissions.Add(permission);
+
+        SessionChanged?.Invoke(null, EventArgs.Empty);
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    public static void SignOut()
+    {
+        CurrentUserName = "Not signed in";
+        CurrentDisplayName = "Not signed in";
+        CurrentRoleName = "None";
+        IsAdmin = false;
+        IsAuthenticated = false;
+        CurrentPermissions.Clear();
         SessionChanged?.Invoke(null, EventArgs.Empty);
         CommandManager.InvalidateRequerySuggested();
     }
 
     public static bool HasPermission(string permissionKey)
-    {
-        if (IsAdmin)
-            return true;
-
-        return CurrentRoleName.ToUpperInvariant() switch
-        {
-            "MANAGER" => ManagerPermissions.Contains(permissionKey),
-            "OPERATOR" => OperatorPermissions.Contains(permissionKey),
-            "VIEWER" => ViewerPermissions.Contains(permissionKey),
-            _ => false
-        };
-    }
+        => IsAuthenticated && (IsAdmin || CurrentPermissions.Contains(permissionKey));
 
     public static string DeniedReason(string permissionKey) =>
-        $"Access denied. {CurrentUserName} ({CurrentRoleName}) does not have permission: {permissionKey}. Contact an Admin to change the assigned role.";
+        IsAuthenticated
+            ? $"Access denied. {CurrentDisplayName} ({CurrentRoleName}) does not have permission: {permissionKey}. Contact an Admin to change the assigned role."
+            : "Access denied because no authenticated system user is active.";
 }
 
 internal static class SystemAuthorizationExperience
@@ -123,6 +120,7 @@ internal static class SystemAuthorizationExperience
 
         var allowed = SystemSecuritySession.HasPermission(permission);
         button.IsEnabled = allowed;
+        button.SetValue(FrameworkElement.TagProperty, $"Permission:{permission}");
 
         if (!allowed)
             button.ToolTip = SystemSecuritySession.DeniedReason(permission);
