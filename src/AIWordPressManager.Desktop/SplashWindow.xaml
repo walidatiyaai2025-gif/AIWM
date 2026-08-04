@@ -1,0 +1,66 @@
+<Window x:Class="AIWordPressManager.Desktop.SplashWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AI WordPress Management" Icon="Assets/Brand/app_icon.ico"
+        Width="620" Height="370"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="True" Topmost="True">
+    <Border Background="#0F172A" BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1.5" CornerRadius="18" Padding="30">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Orientation="Horizontal">
+                <Border Width="76" Height="76" CornerRadius="18" Background="White" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                    <Image Source="Assets/Brand/app_icon_256.png" Stretch="Uniform" Margin="5"/>
+                </Border>
+                <StackPanel Margin="18,7,0,0">
+                    <TextBlock Text="AI WordPress" Foreground="{DynamicResource PrimaryBrush}" FontSize="28" FontWeight="Bold"/>
+                    <TextBlock Text="MANAGEMENT" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14" FontWeight="SemiBold" Margin="0,3,0,0"/>
+                    <TextBlock Text="Smart Tools. Better Sites. Real Results." Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" Margin="0,5,0,0"/>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" VerticalAlignment="Center">
+                <Grid Width="76" Height="76" HorizontalAlignment="Center" Margin="0,0,0,20">
+                    <Ellipse Stroke="#3A3218" StrokeThickness="7"/>
+                    <Path Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="7" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          Data="M 38,4 A 34,34 0 0 1 72,38" RenderTransformOrigin="0.5,0.5">
+                        <Path.RenderTransform><RotateTransform x:Name="SpinnerRotate"/></Path.RenderTransform>
+                        <Path.Triggers>
+                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation Storyboard.TargetName="SpinnerRotate" Storyboard.TargetProperty="Angle"
+                                                         From="0" To="360" Duration="0:0:1"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Path.Triggers>
+                    </Path>
+                    <TextBlock x:Name="PercentageText" Text="0%" Foreground="#F8FAFC" FontSize="16" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock x:Name="StageText" Text="Starting application" Foreground="#22D3B0" FontSize="18"
+                           FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"/>
+                <TextBlock x:Name="DetailText" Text="Preparing services..." Foreground="#CBD5E1" FontSize="13"
+                           HorizontalAlignment="Center" TextAlignment="Center" Margin="0,9,0,0" TextWrapping="Wrap" MaxWidth="500"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2">
+                <ProgressBar x:Name="StartupProgressBar" Height="9" Minimum="0" Maximum="100" Value="0"
+                             Foreground="{DynamicResource PrimaryBrush}" Background="{DynamicResource SurfaceAltBrush}" BorderThickness="0"/>
+                <DockPanel Margin="0,10,0,0">
+                    <TextBlock Text="Offline-first startup" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
+                    <TextBlock x:Name="ElapsedText" DockPanel.Dock="Right" Text="00:00" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                               HorizontalAlignment="Right"/>
+                </DockPanel>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

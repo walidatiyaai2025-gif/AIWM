@@ -1,0 +1,16 @@
+.vs/
+.idea/
+**/bin/
+**/obj/
+TestResults/
+*.user
+*.suo
+*.db
+*.db-shm
+*.db-wal
+Data/
+Logs/
+Screenshots/
+Backups/
+Exports/
+Temp/

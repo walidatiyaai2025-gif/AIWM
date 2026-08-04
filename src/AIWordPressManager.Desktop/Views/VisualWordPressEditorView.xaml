@@ -1,0 +1,273 @@
+<UserControl x:Class="AIWordPressManager.Desktop.Views.VisualWordPressEditorView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf">
+ <Grid Margin="28,22,28,24">
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*"/>
+  </Grid.RowDefinitions>
+
+  <!-- Page header -->
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <StackPanel>
+    <TextBlock Text="Visual WordPress Editor" FontSize="30" FontWeight="Bold"/>
+    <TextBlock Text="Select any live element, preview exact CSS safely, capture evidence, execute through the WordPress Bridge, verify the public result, and roll back when required."
+               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,7,0,0" TextWrapping="Wrap" MaxWidth="980"/>
+   </StackPanel>
+   <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top">
+    <Button Content="Quick bridge check" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CheckBridgeCommand}" Margin="0,0,8,8"/>
+    <Button Content="Run full bridge test" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RunBridgeDiagnosticsCommand}" Margin="0,0,8,8"/>
+    <Button Content="Bridge plugin folder" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenBridgePluginFolderCommand}" Margin="0,0,8,8"/>
+    <Button Content="Evidence folder" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenEvidenceFolderCommand}" Margin="0,0,8,8"/>
+    <Button Content="Prepare proposal" Style="{StaticResource SecondaryButtonStyle}" Click="PrepareProposal_Click" Margin="0,0,8,8"/>
+    <Button Content="Execute on WordPress" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ExecuteVisualCssCommand}" Margin="0,0,8,8"/>
+    <Button Content="Rollback" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RollbackVisualCssCommand}" Margin="0,0,0,8"/>
+   </WrapPanel>
+  </Grid>
+
+  <!-- Readiness strip -->
+  <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="14" Margin="0,18,0,12">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="1.35*"/><ColumnDefinition Width="12"/>
+     <ColumnDefinition Width="1*"/><ColumnDefinition Width="12"/>
+     <ColumnDefinition Width="1*"/>
+    </Grid.ColumnDefinitions>
+    <StackPanel>
+     <TextBlock Text="WORDPRESS BRIDGE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/>
+     <TextBlock Text="{Binding BridgeStatus}" TextWrapping="Wrap" Margin="0,5,0,0" FontWeight="SemiBold"/>
+    </StackPanel>
+    <StackPanel Grid.Column="2">
+     <TextBlock Text="EXECUTION SAFETY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/>
+     <TextBlock Text="Revision + verification + rollback" TextWrapping="Wrap" Margin="0,5,0,0"/>
+    </StackPanel>
+    <StackPanel Grid.Column="4">
+     <TextBlock Text="CURRENT STATE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/>
+     <TextBlock Text="{Binding VerificationStatus}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+    </StackPanel>
+   </Grid>
+  </Border>
+
+  <!-- Browser command bar -->
+  <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="12" Margin="0,0,0,12">
+   <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBox Text="{Binding PageUrl, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"
+             ToolTip="Public HTTP or HTTPS page URL to load in the isolated visual editor."/>
+    <WrapPanel Grid.Column="1" Margin="10,0,0,0" HorizontalAlignment="Right">
+     <Button Content="Load page" Style="{StaticResource SecondaryButtonStyle}" Click="LoadPage_Click" Margin="0,0,8,0"/>
+     <Button Content="Inspect element" Style="{StaticResource SecondaryButtonStyle}" Click="ToggleInspect_Click" Margin="0,0,8,0"/>
+     <Button Content="Capture before" Style="{StaticResource SecondaryButtonStyle}" Click="CaptureBefore_Click" Margin="0,0,8,0"/>
+     <Button Content="Apply preview" Style="{StaticResource PrimaryButtonStyle}" Click="ApplyPreview_Click" Margin="0,0,8,0"/>
+     <Button Content="Reset" Style="{StaticResource SecondaryButtonStyle}" Click="ResetPreview_Click" Margin="0,0,8,0"/>
+     <Button Content="Capture after" Style="{StaticResource SecondaryButtonStyle}" Click="CaptureAfter_Click"/>
+    </WrapPanel>
+   </Grid>
+  </Border>
+
+  <!-- Main visual workspace -->
+  <Grid Grid.Row="3">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="2.25*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="0.95*"/></Grid.ColumnDefinitions>
+
+   <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="0" ClipToBounds="True">
+    <Grid>
+     <wv2:WebView2 x:Name="Browser"/>
+
+     <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Padding="11,6" CornerRadius="8"
+             Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+             IsHitTestVisible="False" MaxWidth="720">
+      <StackPanel Orientation="Horizontal">
+       <Ellipse Width="8" Height="8" Fill="{DynamicResource PrimaryBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+       <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+      </StackPanel>
+     </Border>
+
+     <!-- Empty state before the first page load -->
+     <Border Background="{DynamicResource SurfaceBrush}"
+             Visibility="{Binding IsBrowserReady, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
+       <Border Width="72" Height="72" CornerRadius="20" Background="{DynamicResource AccentSoftBrush}" HorizontalAlignment="Center">
+        <TextBlock Text="◎" FontSize="34" Foreground="{DynamicResource PrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+       </Border>
+       <TextBlock Text="Load a public page to begin" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,18,0,0"/>
+       <TextBlock Text="The page opens inside an isolated WebView. Nothing is written to WordPress until you explicitly execute an approved change through the Bridge."
+                  Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,18"/>
+       <Button Content="Load current URL" Style="{StaticResource PrimaryButtonStyle}" Click="LoadPage_Click" HorizontalAlignment="Center"/>
+      </StackPanel>
+     </Border>
+    </Grid>
+   </Border>
+
+   <Border Grid.Column="2" Style="{StaticResource CardStyle}" Padding="0">
+    <TabControl Margin="0">
+     <TabItem Header="Selection">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+       <StackPanel Margin="18">
+        <TextBlock Text="Selected element" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="Inspect mode highlights the live DOM. Click one element to lock its selector and computed style."
+                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,14"/>
+        <UniformGrid Columns="2">
+         <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="8" Padding="10" Margin="0,0,6,10">
+          <StackPanel><TextBlock Text="TAG" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/><TextBlock Text="{Binding SelectedTag}" FontWeight="Bold" FontSize="16" Margin="0,4,0,0"/></StackPanel>
+         </Border>
+         <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="8" Padding="10" Margin="6,0,0,10">
+          <StackPanel><TextBlock Text="ID" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/><TextBlock Text="{Binding SelectedId}" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel>
+         </Border>
+        </UniformGrid>
+        <TextBlock Text="CSS selector" FontWeight="SemiBold"/>
+        <TextBox Text="{Binding SelectedSelector}" IsReadOnly="True" Margin="0,5,0,12" TextWrapping="Wrap" FontFamily="Consolas"/>
+        <TextBlock Text="Classes" FontWeight="SemiBold"/>
+        <TextBox Text="{Binding SelectedClasses}" IsReadOnly="True" Margin="0,5,0,12" TextWrapping="Wrap"/>
+        <TextBlock Text="Visible text" FontWeight="SemiBold"/>
+        <TextBox Text="{Binding SelectedText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" Margin="0,5,0,12"/>
+        <TextBlock Text="Computed style snapshot" FontWeight="SemiBold"/>
+        <TextBox Text="{Binding CurrentComputedStyle}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="170" Margin="0,5,0,0" FontFamily="Consolas"/>
+       </StackPanel>
+      </ScrollViewer>
+     </TabItem>
+
+     <TabItem Header="CSS &amp; execution">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+       <StackPanel Margin="18">
+        <TextBlock Text="Exact CSS change" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="This CSS is applied only to the selected selector during preview. The Bridge writes it to a managed WordPress Custom CSS block only after approval."
+                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,12"/>
+        <TextBox Text="{Binding PreviewCss, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" MinHeight="260"/>
+        <Border Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,14,0,0">
+         <StackPanel>
+          <TextBlock Text="Safe execution pipeline" FontWeight="SemiBold"/>
+          <TextBlock Text="Bridge capability → WordPress revision → managed CSS write → public-page reload → screenshot → computed-style verification → rollback token"
+                     TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+          <TextBlock Text="{Binding ProposalStatus}" Margin="0,10,0,0" TextWrapping="Wrap"/>
+         </StackPanel>
+        </Border>
+       </StackPanel>
+      </ScrollViewer>
+     </TabItem>
+
+
+     <TabItem Header="Bridge diagnostics">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+       <StackPanel Margin="18">
+        <TextBlock Text="WordPress Bridge validation" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="This read-only test validates credentials, REST endpoints, route discovery, bridge version, WordPress permissions, theme context, and rollback availability. It does not modify the website."
+                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,12"/>
+        <Border Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
+         <StackPanel>
+          <TextBlock Text="{Binding BridgeDiagnosticsSummary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding BridgeEnvironmentSummary}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+          <TextBlock Text="{Binding BridgeLastTestedAtUtc, StringFormat='Last tested (UTC): {0:yyyy-MM-dd HH:mm:ss}'}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+         </StackPanel>
+        </Border>
+        <WrapPanel Margin="0,12,0,12">
+         <Button Content="Run full diagnostics" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RunBridgeDiagnosticsCommand}" Margin="0,0,8,8"/>
+         <Button Content="Open bundled plugin" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenBridgePluginFolderCommand}" Margin="0,0,8,8"/>
+         <Button Content="Open WordPress upload" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenWordPressPluginUploadCommand}" Margin="0,0,8,8"/>
+         <Button Content="Run safe dry-run" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RunSafeBridgeTestCommand}" Margin="0,0,8,8"/>
+         <Button Content="Open API logs" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="Logs" Margin="0,0,8,8"/>
+        </WrapPanel>
+        <Border Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+         <StackPanel>
+          <TextBlock Text="Safe execution gate" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding SafeBridgeTestSummary}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+          <TextBlock Text="{Binding SafeBridgeTestedAtUtc, StringFormat='Last safe test (UTC): {0:yyyy-MM-dd HH:mm:ss}'}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+          <TextBlock Text="Execution is blocked unless full diagnostics and this no-write dry-run have both passed within the last 15 minutes." Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+         </StackPanel>
+        </Border>
+        <DataGrid ItemsSource="{Binding BridgeDiagnosticChecks}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" MinHeight="300">
+         <DataGrid.Columns>
+          <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="75"/>
+          <DataGridTextColumn Header="Diagnostic" Binding="{Binding Name}" Width="1.35*"/>
+          <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110"/>
+          <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="2.4*"/>
+          <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="90"/>
+         </DataGrid.Columns>
+        </DataGrid>
+        <Border Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+         <TextBlock TextWrapping="Wrap"><Run FontWeight="SemiBold" Text="Pass criteria: "/><Run Text="Bridge 1.3.0 or newer, authenticated health and Visual CSS endpoints reachable, route discovery available, and the saved WordPress user has edit_posts plus edit_theme_options."/></TextBlock>
+        </Border>
+       </StackPanel>
+      </ScrollViewer>
+     </TabItem>
+
+     <TabItem Header="Managed changes">
+      <Grid Margin="18">
+       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+       </Grid.RowDefinitions>
+       <StackPanel>
+        <TextBlock Text="Managed Visual CSS history" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="Review every Visual CSS write recorded by Bridge 1.3.0, inspect its selector and declarations, and roll back an active change without exposing rollback secrets."
+                   Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,10"/>
+       </StackPanel>
+       <Border Grid.Row="1" Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+        <Grid>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <StackPanel>
+          <TextBlock Text="{Binding ManagedHistorySummary}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,5,0,0" TextWrapping="Wrap">
+           <Run Text="Checksum: "/><Run Text="{Binding ManagedHistoryChecksum}"/><Run Text=" • Active rules: "/><Run Text="{Binding ManagedRuleCount}"/>
+          </TextBlock>
+         </StackPanel>
+         <WrapPanel Grid.Column="1" Margin="12,0,0,0">
+          <Button Content="Refresh history" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RefreshManagedHistoryCommand}" Margin="0,0,8,0"/>
+          <Button Content="Rollback selected" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RollbackManagedHistoryCommand}"/>
+         </WrapPanel>
+        </Grid>
+       </Border>
+       <DataGrid Grid.Row="2" ItemsSource="{Binding ManagedHistory}" SelectedItem="{Binding SelectedManagedHistoryItem}"
+                 AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single">
+        <DataGrid.Columns>
+         <DataGridTextColumn Header="Status" Binding="{Binding DisplayStatus}" Width="110"/>
+         <DataGridTextColumn Header="Executed" Binding="{Binding ExecutedAt}" Width="145"/>
+         <DataGridTextColumn Header="Selector" Binding="{Binding Selector}" Width="1.4*"/>
+         <DataGridTextColumn Header="CSS" Binding="{Binding CssDeclarations}" Width="1.8*"/>
+         <DataGridTextColumn Header="Page" Binding="{Binding PageUrl}" Width="1.5*"/>
+         <DataGridTextColumn Header="Theme" Binding="{Binding ActiveStylesheet}" Width="120"/>
+         <DataGridTextColumn Header="User" Binding="{Binding ExecutedBy}" Width="100"/>
+         <DataGridTextColumn Header="Rolled back" Binding="{Binding RolledBackAt}" Width="145"/>
+        </DataGrid.Columns>
+       </DataGrid>
+       <Border Grid.Row="3" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+        <StackPanel>
+         <TextBlock Text="Selected change details" FontWeight="SemiBold"/>
+         <TextBlock Text="{Binding SelectedManagedHistoryItem.ChangeId, StringFormat='Change ID: {0}'}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+         <TextBlock Text="{Binding SelectedManagedHistoryItem.Selector, StringFormat='Selector: {0}'}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+         <TextBlock Text="{Binding SelectedManagedHistoryItem.CssDeclarations, StringFormat='CSS: {0}'}" TextWrapping="Wrap" Margin="0,4,0,0" FontFamily="Consolas"/>
+         <TextBlock Text="Rollback restores the complete Custom CSS revision that existed immediately before this change. Later managed changes may also be removed, so review the timeline before confirming."
+                    Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+        </StackPanel>
+       </Border>
+      </Grid>
+     </TabItem>
+
+     <TabItem Header="Evidence &amp; response">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+       <StackPanel Margin="18">
+        <TextBlock Text="Verified evidence" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Text="Before screenshot" FontWeight="SemiBold" Margin="0,14,0,0"/>
+        <TextBox Text="{Binding BeforeScreenshotPath}" IsReadOnly="True" TextWrapping="Wrap" Margin="0,5,0,8"/>
+        <Button Content="Open before image" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenBeforeImageCommand}" HorizontalAlignment="Left"/>
+        <TextBlock Text="After screenshot" FontWeight="SemiBold" Margin="0,16,0,0"/>
+        <TextBox Text="{Binding AfterScreenshotPath}" IsReadOnly="True" TextWrapping="Wrap" Margin="0,5,0,8"/>
+        <Button Content="Open after image" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenAfterImageCommand}" HorizontalAlignment="Left"/>
+        <Separator Margin="0,18"/>
+        <TextBlock Text="Browser / console" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding LastConsoleMessage}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,12"/>
+        <TextBlock Text="WordPress response" FontWeight="SemiBold"/>
+        <TextBox Text="{Binding ExecutionResponse}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MinHeight="210" Margin="0,6,0,0" FontFamily="Consolas"/>
+       </StackPanel>
+      </ScrollViewer>
+     </TabItem>
+    </TabControl>
+   </Border>
+  </Grid>
+ </Grid>
+</UserControl>

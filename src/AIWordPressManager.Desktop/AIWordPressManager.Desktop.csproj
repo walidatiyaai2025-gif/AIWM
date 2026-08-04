@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>Assets\Brand\app_icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\Brand\*.png" />
+    <Resource Include="Assets\Brand\app_icon.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AIWordPressManager.Application\AIWordPressManager.Application.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Infrastructure\AIWordPressManager.Infrastructure.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Persistence\AIWordPressManager.Persistence.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.WordPress\AIWordPressManager.WordPress.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.AI\AIWordPressManager.AI.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Automation\AIWordPressManager.Automation.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Reporting\AIWordPressManager.Reporting.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Settings.Configuration" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Documentation\AIWordPressManager_UserGuide_AR.docx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Documentation\AIWordPressManager_System_Status_Roadmap_AR.docx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Documentation\UserGuideSource.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\WordPressPlugins\**\*" Link="WordPressPlugins\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+</Project>

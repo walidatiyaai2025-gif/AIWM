@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\AIWordPressManager.Application\AIWordPressManager.Application.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Domain\AIWordPressManager.Domain.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Persistence\AIWordPressManager.Persistence.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Quartz.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

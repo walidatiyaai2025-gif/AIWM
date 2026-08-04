@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <AssemblyName>AIWordPressManager.Setup</AssemblyName>
+    <RootNamespace>AIWordPressManager.Setup</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ReleaseFolder>$(MSBuildProjectDirectory)\Release</ReleaseFolder>
+    <PayloadFolder>$(BaseIntermediateOutputPath)SetupPayload</PayloadFolder>
+  </PropertyGroup>
+
+  <Target Name="PrepareDesktopPayload" BeforeTargets="CoreCompile" Condition="'$(Configuration)' == 'Release' and '$(SkipPayloadBuild)' != 'true'">
+    <MakeDir Directories="$(PayloadFolder)" />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)\..\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj&quot; -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:DebugType=None -p:DebugSymbols=false -o &quot;$(PayloadFolder)&quot;" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(PayloadFolder)\**\*.*">
+        <LogicalName>AIWP.Payload.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="CreateReadySetupExe" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' and '$(PublishingSetup)' != 'true'">
+    <MakeDir Directories="$(ReleaseFolder)" />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishingSetup=true -p:SkipPayloadBuild=true -o &quot;$(ReleaseFolder)&quot;" />
+  </Target>
+</Project>

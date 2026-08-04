@@ -1,0 +1,34 @@
+<Application x:Class="AIWordPressManager.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:conv="clr-namespace:AIWordPressManager.Desktop.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <conv:BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+            <sys:String x:Key="L_AIStudio">AI Studio</sys:String>
+            <sys:String x:Key="L_AIStudioDescription">Test an enabled provider and generate an exact proposal before applying anything to WordPress.</sys:String>
+            <sys:String x:Key="L_ReloadProviders">↻  Reload providers</sys:String>
+            <sys:String x:Key="L_Request">Request</sys:String>
+            <sys:String x:Key="L_Provider">Provider</sys:String>
+            <sys:String x:Key="L_Model">Model</sys:String>
+            <sys:String x:Key="L_Task">Task</sys:String>
+            <sys:String x:Key="L_CurrentContext">Current value or context</sys:String>
+            <sys:String x:Key="L_DesiredOutcome">Desired outcome</sys:String>
+            <sys:String x:Key="L_GenerateProposal">▶  Generate exact proposal</sys:String>
+            <sys:String x:Key="L_ExactProposal">Exact AI proposal</sys:String>
+            <sys:String x:Key="L_PreviewOnly">PREVIEW ONLY</sys:String>
+            <sys:String x:Key="L_Reasoning">Reasoning summary</sys:String>
+            <sys:String x:Key="L_AiStudioNotice">Nothing from AI Studio is saved to WordPress. Move a validated result into Suggested Changes before execution.</sys:String>
+            <sys:String x:Key="L_ProviderAware">Provider-aware request handling</sys:String>
+            <sys:String x:Key="L_ProviderAwareText">Provider-specific parameters are applied automatically.</sys:String>
+            <sys:String x:Key="L_DesignQuality">DESIGN &amp; QUALITY</sys:String>
+            <sys:String x:Key="L_AiActions">AI ACTIONS</sys:String>
+            <sys:String x:Key="L_System">SYSTEM</sys:String>
+
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\AIWordPressManager.Application\AIWordPressManager.Application.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Domain\AIWordPressManager.Domain.csproj" />
+  </ItemGroup>
+</Project>
