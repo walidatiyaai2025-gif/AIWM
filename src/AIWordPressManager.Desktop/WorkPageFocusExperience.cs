@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -48,13 +47,12 @@ internal static class WorkPageFocusExperience
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
 
-        var state = new State(window, root, main);
+        var state = new State(root, main);
         Attached.Add(window, state);
 
-        var bar = BuildPrimaryActionBar(main);
-        state.ActionBar = bar;
-        Grid.SetRow(bar, 2);
-        Panel.SetZIndex(bar, 120);
+        state.ActionBar = BuildPrimaryActionBar(main);
+        Grid.SetRow(state.ActionBar, 2);
+        Panel.SetZIndex(state.ActionBar, 120);
 
         foreach (var child in root.Children.OfType<FrameworkElement>()
                      .Where(x => Grid.GetRow(x) == 2)
@@ -64,7 +62,7 @@ internal static class WorkPageFocusExperience
             child.IsHitTestVisible = false;
         }
 
-        root.Children.Add(bar);
+        root.Children.Add(state.ActionBar);
 
         main.PropertyChanged += (_, args) =>
         {
@@ -117,7 +115,6 @@ internal static class WorkPageFocusExperience
 
         var context = new StackPanel
         {
-            Grid.ColumnProperty = { },
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -235,9 +232,8 @@ internal static class WorkPageFocusExperience
     private static Brush Brush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
-    private sealed class State(MainWindow window, Grid root, MainWindowViewModel main)
+    private sealed class State(Grid root, MainWindowViewModel main)
     {
-        public MainWindow Window { get; } = window;
         public Grid Root { get; } = root;
         public MainWindowViewModel Main { get; } = main;
         public Border ActionBar { get; set; } = null!;
