@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Input;
@@ -17,12 +16,6 @@ public sealed partial class MainWindowViewModel
         _professionalJourneyCommand ??= new AsyncRelayCommand(
             ContinueProfessionalJourneyAsync,
             () => !IsGuidedAnalysisRunning && !IsSafeAutopilotRunning);
-
-    partial void OnIsGuidedAnalysisRunningChanged(bool value)
-        => ProfessionalJourneyCommand.NotifyCanExecuteChanged();
-
-    partial void OnIsSafeAutopilotRunningChanged(bool value)
-        => ProfessionalJourneyCommand.NotifyCanExecuteChanged();
 
     private async Task ContinueProfessionalJourneyAsync()
     {
