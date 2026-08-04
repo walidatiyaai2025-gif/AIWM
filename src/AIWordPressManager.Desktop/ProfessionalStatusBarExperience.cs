@@ -52,7 +52,7 @@ internal static class ProfessionalStatusBarExperience
             Background = Brush("SurfaceAltBrush", Brushes.WhiteSmoke),
             BorderBrush = Brush("BorderBrush", Brushes.LightGray),
             BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(10, 0),
+            Padding = new Thickness(10, 0, 10, 0),
             Tag = "ProfessionalStatusBar"
         };
 
@@ -178,7 +178,7 @@ internal static class ProfessionalStatusBarExperience
         var version = typeof(MainWindow).Assembly.GetName().Version;
         return new TextBlock
         {
-            Text = version is null ? "1.9.0" : $"{version.Major}.{version.Minor}.{version.Build}",
+            Text = version is null ? "1.9.2" : $"{version.Major}.{version.Minor}.{version.Build}",
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
             Foreground = Brush("PrimaryBrush", Brushes.Teal),
