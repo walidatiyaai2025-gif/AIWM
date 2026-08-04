@@ -38,7 +38,7 @@ namespace AIWordPressManager.Desktop.ViewModels
             private set => SetProperty(ref _journeyProfessionalStatusBrush, value);
         }
 
-        public string JourneyProfessionalVersion => "v1.3.12";
+        public string JourneyProfessionalVersion => "v1.3.14";
 
         partial void OnDashboardSeoScoreStateChanged(string value) => EvaluateProfessionalJourney();
         partial void OnDashboardJourneyProgressChanged(int value) => EvaluateProfessionalJourney();
@@ -156,8 +156,8 @@ namespace AIWordPressManager.Desktop
                     Padding = new Thickness(12, 9, 12, 9),
                     CornerRadius = new CornerRadius(7),
                     BorderThickness = new Thickness(1),
-                    Background = (Brush)window.FindResource("SoftSurfaceBrush"),
-                    BorderBrush = (Brush)window.FindResource("BorderBrush")
+                    Background = ResolveProfessionalBrush(window, "SoftSurfaceBrush", new SolidColorBrush(Color.FromRgb(30, 41, 59))),
+                    BorderBrush = ResolveProfessionalBrush(window, "BorderBrush", new SolidColorBrush(Color.FromRgb(71, 85, 105)))
                 };
                 Grid.SetRow(statusBorder, 1);
                 Grid.SetColumnSpan(statusBorder, 2);
@@ -184,7 +184,7 @@ namespace AIWordPressManager.Desktop
                     FontSize = 11,
                     Margin = new Thickness(0, 3, 0, 0),
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)window.FindResource("TextSecondaryBrush")
+                    Foreground = ResolveProfessionalBrush(window, "TextSecondaryBrush", Brushes.SlateGray)
                 };
                 reason.SetBinding(TextBlock.TextProperty, new Binding("JourneyProfessionalReason"));
                 details.Children.Add(blocker);
@@ -195,6 +195,12 @@ namespace AIWordPressManager.Desktop
                 statusBorder.Child = statusGrid;
                 actionGrid.Children.Add(statusBorder);
             }));
+        }
+
+        private static Brush ResolveProfessionalBrush(FrameworkElement element, string key, Brush fallback)
+        {
+            var resource = element.TryFindResource(key);
+            return resource is Brush brush ? brush : fallback;
         }
 
         private static TextBlock? FindProfessionalJourneyTextBlock(DependencyObject parent, string text)
