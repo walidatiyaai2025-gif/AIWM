@@ -130,7 +130,7 @@ internal static class ReviewWorkbenchesExperience
         SetText(panel, "AltSuggestion", state.CurrentMedia is null
             ? "Synchronize the media library first."
             : string.Join("\n",
-                $"Media #{state.CurrentMedia.Id}: {state.CurrentMedia.Title}",
+                $"Media #{state.CurrentMedia.Id}: {GetMediaDisplayName(state.CurrentMedia)}",
                 $"Current Alt: {(string.IsNullOrWhiteSpace(state.CurrentMedia.AltText) ? "(empty)" : state.CurrentMedia.AltText)}",
                 $"Suggested Alt: {state.CurrentAltSuggestion}",
                 $"Dimensions: {state.CurrentMedia.Width?.ToString() ?? "?"} × {state.CurrentMedia.Height?.ToString() ?? "?"}"));
@@ -152,7 +152,7 @@ internal static class ReviewWorkbenchesExperience
             ? media.Title
             : !string.IsNullOrWhiteSpace(media.Slug)
                 ? media.Slug
-                : Path.GetFileNameWithoutExtension(media.OriginalFileName ?? media.SourceUrl);
+                : GetMediaFileName(media);
         source = Regex.Replace(source ?? string.Empty, @"[-_]+", " ");
         source = Regex.Replace(source, @"\b(image|img|photo|picture|screenshot|download|dsc|scan)\b", " ", RegexOptions.IgnoreCase);
         source = Regex.Replace(source, @"\b\d{4,}\b", " ");
@@ -160,6 +160,23 @@ internal static class ReviewWorkbenchesExperience
         if (string.IsNullOrWhiteSpace(source)) source = "Website image";
         if (source.Length > 125) source = source[..125].Trim();
         return source;
+    }
+
+    private static string GetMediaDisplayName(WordPressMediaItem media)
+    {
+        if (!string.IsNullOrWhiteSpace(media.Title) && !media.Title.Equals("Untitled", StringComparison.OrdinalIgnoreCase))
+            return media.Title;
+        if (!string.IsNullOrWhiteSpace(media.Slug)) return media.Slug;
+        var fileName = GetMediaFileName(media);
+        return string.IsNullOrWhiteSpace(fileName) ? $"Media {media.Id}" : fileName;
+    }
+
+    private static string GetMediaFileName(WordPressMediaItem media)
+    {
+        if (string.IsNullOrWhiteSpace(media.SourceUrl)) return string.Empty;
+        if (Uri.TryCreate(media.SourceUrl, UriKind.Absolute, out var uri))
+            return Path.GetFileNameWithoutExtension(uri.LocalPath);
+        return Path.GetFileNameWithoutExtension(media.SourceUrl);
     }
 
     private static IReadOnlyList<DuplicatePair> FindDuplicates(IReadOnlyList<WordPressContentItem> content)
