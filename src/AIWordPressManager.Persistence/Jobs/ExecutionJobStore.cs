@@ -8,10 +8,25 @@ public sealed class ExecutionJobStore(AppDbContext dbContext) : IExecutionJobSto
 {
     public async Task<Guid> StartAsync(Guid siteId, string jobType, CancellationToken cancellationToken = default)
     {
+        // A failed site registration can leave an Added Site entity in a long-lived
+        // DbContext. The next SaveChanges (often the first synchronization job)
+        // would try to persist that stale entity again and fail on Sites.SiteUrl.
+        // Start each independent job with a clean unit of work.
+        dbContext.ChangeTracker.Clear();
+
         var job = new ExecutionJob(siteId, jobType, DateTime.UtcNow);
         dbContext.ExecutionJobs.Add(job);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return job.Id;
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return job.Id;
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task ReportAsync(Guid jobId, int progressPercent, string currentStep, CancellationToken cancellationToken = default)
