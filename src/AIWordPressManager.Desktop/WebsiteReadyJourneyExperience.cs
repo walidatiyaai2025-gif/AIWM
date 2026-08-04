@@ -50,7 +50,7 @@ internal static class WebsiteReadyJourneyExperience
     {
         var card = new Border
         {
-            Width = 520,
+            Width = 560,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 18, 0, 0),
@@ -106,9 +106,22 @@ internal static class WebsiteReadyJourneyExperience
         };
         button.Click += async (_, _) =>
         {
-            await main.NavigateCommand.ExecuteAsync("SEO Audit");
-            if (main.SeoAudit.RunAuditCommand.CanExecute(null))
-                await main.SeoAudit.RunAuditCommand.ExecuteAsync(null);
+            var hasAudit = main.SeoAudit.AuditedItems > 0 || main.SeoAudit.Score > 0;
+            var hasProposals = main.SuggestedChanges.Items.Count > 0;
+
+            if (!hasAudit)
+            {
+                await main.NavigateCommand.ExecuteAsync("SEO Audit");
+                if (main.SeoAudit.RunAuditCommand.CanExecute(null))
+                    await main.SeoAudit.RunAuditCommand.ExecuteAsync(null);
+                return;
+            }
+
+            await main.NavigateCommand.ExecuteAsync("Suggested Changes");
+            if (!hasProposals && main.SuggestedChanges.GenerateCommand.CanExecute(null))
+                await main.SuggestedChanges.GenerateCommand.ExecuteAsync(null);
+            else
+                await main.SuggestedChanges.LoadAsync();
         };
         Grid.SetColumn(button, 1);
         grid.Children.Add(button);
@@ -122,6 +135,8 @@ internal static class WebsiteReadyJourneyExperience
         var synchronized = main.Explorer.LoadedAt.HasValue || main.Explorer.LoadedItemsCount > 0;
         var auditRunning = main.SeoAudit.IsRunning;
         var auditExists = main.SeoAudit.AuditedItems > 0 || main.SeoAudit.Score > 0;
+        var proposalsBusy = main.SuggestedChanges.IsBusy;
+        var proposalCount = main.SuggestedChanges.Items.Count;
 
         card.Visibility = connected && synchronized ? Visibility.Visible : Visibility.Collapsed;
         if (card.Visibility != Visibility.Visible) return;
@@ -144,15 +159,41 @@ internal static class WebsiteReadyJourneyExperience
             return;
         }
 
+        if (proposalsBusy)
+        {
+            if (title is not null) title.Text = "Preparing actionable changes…";
+            if (summary is not null) summary.Text = main.SuggestedChanges.StatusMessage;
+            if (meta is not null) meta.Text = "Converting audit findings into safe, explainable proposals";
+            if (action is not null)
+            {
+                action.Content = "Generating proposals";
+                action.IsEnabled = false;
+            }
+            return;
+        }
+
+        if (proposalCount > 0)
+        {
+            if (title is not null) title.Text = $"{proposalCount} proposed change(s) ready";
+            if (summary is not null) summary.Text = "Review each current value, proposed value, risk level, execution plan, and expected result before approval.";
+            if (meta is not null) meta.Text = $"Pending: {main.SuggestedChanges.PendingCount} • Approved: {main.SuggestedChanges.ApprovedCount} • Rejected: {main.SuggestedChanges.RejectedCount}";
+            if (action is not null)
+            {
+                action.Content = "Review proposals";
+                action.IsEnabled = true;
+            }
+            return;
+        }
+
         if (auditExists)
         {
             if (title is not null) title.Text = $"Audit ready • Score {main.SeoAudit.Score}%";
-            if (summary is not null) summary.Text = $"Found {main.SeoAudit.HighIssues + main.SeoAudit.MediumIssues + main.SeoAudit.LowIssues} measurable issue(s). Review the findings and prepare changes.";
+            if (summary is not null) summary.Text = $"Found {main.SeoAudit.HighIssues + main.SeoAudit.MediumIssues + main.SeoAudit.LowIssues} measurable issue(s). Convert the findings into reviewable WordPress changes.";
             if (meta is not null) meta.Text = $"High: {main.SeoAudit.HighIssues} • Medium: {main.SeoAudit.MediumIssues} • Low: {main.SeoAudit.LowIssues}";
             if (action is not null)
             {
-                action.Content = "Review findings";
-                action.IsEnabled = true;
+                action.Content = "Generate suggested changes";
+                action.IsEnabled = main.SuggestedChanges.GenerateCommand.CanExecute(null);
             }
             return;
         }
