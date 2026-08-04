@@ -1,5 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Windows;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AIWordPressManager.Desktop.Services;
@@ -121,7 +121,7 @@ public sealed partial class UiOperationService : ObservableObject
 
     private static void RunOnUiThread(Action action)
     {
-        var dispatcher = Application.Current?.Dispatcher;
+        var dispatcher = global::System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
             action();
         else
@@ -149,6 +149,6 @@ public sealed record UiOperationHistoryItem(
     string Detail,
     int Progress)
 {
-    public string TimeText => Timestamp.ToString("HH:mm:ss");
+    public string TimeText => Timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
     public string DisplayText => $"{TimeText}  •  {Progress,3}%  •  {Step}\n{Detail}";
 }
