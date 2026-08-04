@@ -234,13 +234,21 @@ internal static partial class ContentQualityBatchExperience
             ? media.Title
             : !string.IsNullOrWhiteSpace(media.Slug)
                 ? media.Slug
-                : Path.GetFileNameWithoutExtension(media.OriginalFileName ?? media.SourceUrl);
+                : GetMediaFileName(media);
         if (string.IsNullOrWhiteSpace(source)) return string.Empty;
         var value = Regex.Replace(source, "[-_]+", " ");
         value = Regex.Replace(value, @"\b(?:img|image|photo|dsc|screenshot)[ -]?\d*\b", " ", RegexOptions.IgnoreCase);
         value = Regex.Replace(value, @"\s+", " ").Trim();
         if (value.Length > 125) value = value[..125].Trim();
         return value;
+    }
+
+    private static string GetMediaFileName(WordPressMediaItem media)
+    {
+        if (string.IsNullOrWhiteSpace(media.SourceUrl)) return $"Media {media.Id}";
+        if (Uri.TryCreate(media.SourceUrl, UriKind.Absolute, out var uri))
+            return Path.GetFileNameWithoutExtension(uri.LocalPath);
+        return Path.GetFileNameWithoutExtension(media.SourceUrl);
     }
 
     private static string NormalizeText(string html)
