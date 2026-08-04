@@ -1,4 +1,4 @@
-using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -38,7 +38,7 @@ namespace AIWordPressManager.Desktop.ViewModels
             private set => SetProperty(ref _journeyProfessionalStatusBrush, value);
         }
 
-        public string JourneyProfessionalVersion => "v1.3.11";
+        public string JourneyProfessionalVersion => "v1.3.12";
 
         partial void OnDashboardSeoScoreStateChanged(string value) => EvaluateProfessionalJourney();
         partial void OnDashboardJourneyProgressChanged(int value) => EvaluateProfessionalJourney();
@@ -118,35 +118,36 @@ namespace AIWordPressManager.Desktop.ViewModels
 
 namespace AIWordPressManager.Desktop
 {
-    public partial class MainWindow
+    internal static class JourneyProfessionalBootstrap
     {
-        static MainWindow()
+        [ModuleInitializer]
+        internal static void Initialize()
         {
             EventManager.RegisterClassHandler(
                 typeof(MainWindow),
                 FrameworkElement.LoadedEvent,
-                new RoutedEventHandler(InstallProfessionalJourneyStatus));
+                new RoutedEventHandler(MainWindow.InstallProfessionalJourneyStatus));
         }
+    }
 
-        private static void InstallProfessionalJourneyStatus(object sender, RoutedEventArgs e)
+    public partial class MainWindow
+    {
+        internal static void InstallProfessionalJourneyStatus(object sender, RoutedEventArgs e)
         {
             if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
 
             window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
             {
-                var marker = FindTextBlock(window, "RECOMMENDED NEXT ACTION");
+                var marker = FindProfessionalJourneyTextBlock(window, "RECOMMENDED NEXT ACTION");
                 if (marker?.Parent is not StackPanel markerPanel || markerPanel.Parent is not Grid actionGrid) return;
-                if (actionGrid.FindName("ProfessionalJourneyStatus") is not null) return;
+                if (actionGrid.Children.OfType<Border>().Any(x => x.Name == "ProfessionalJourneyStatus")) return;
 
                 if (actionGrid.RowDefinitions.Count == 0)
                     actionGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 actionGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 foreach (UIElement child in actionGrid.Children)
-                {
-                    if (Grid.GetRow(child) == 0) continue;
                     Grid.SetRow(child, 0);
-                }
 
                 var statusBorder = new Border
                 {
@@ -196,7 +197,7 @@ namespace AIWordPressManager.Desktop
             }));
         }
 
-        private static TextBlock? FindTextBlock(DependencyObject parent, string text)
+        private static TextBlock? FindProfessionalJourneyTextBlock(DependencyObject parent, string text)
         {
             var count = VisualTreeHelper.GetChildrenCount(parent);
             for (var index = 0; index < count; index++)
@@ -205,7 +206,7 @@ namespace AIWordPressManager.Desktop
                 if (child is TextBlock textBlock && textBlock.Text.Equals(text, StringComparison.Ordinal))
                     return textBlock;
 
-                var nested = FindTextBlock(child, text);
+                var nested = FindProfessionalJourneyTextBlock(child, text);
                 if (nested is not null) return nested;
             }
             return null;
