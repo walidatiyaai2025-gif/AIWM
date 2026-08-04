@@ -33,8 +33,6 @@ internal static class ProfessionalStatusBarExperience
         Grid.SetRow(bar, 5);
         Panel.SetZIndex(bar, 100);
 
-        // Replace legacy footer visuals in the dedicated status row. Nothing is placed
-        // over the page content, so clicks can never leak through an overlay.
         foreach (var child in root.Children.OfType<FrameworkElement>()
                      .Where(x => Grid.GetRow(x) == 5)
                      .ToArray())
@@ -70,7 +68,7 @@ internal static class ProfessionalStatusBarExperience
         };
         grid.Children.Add(left);
 
-        left.Children.Add(StatusText("●", "SuccessBrush", "DatabaseStatus", bold: true));
+        left.Children.Add(StatusText("●", "SuccessBrush", null, bold: true));
         left.Children.Add(StatusText(string.Empty, "TextSecondaryBrush", "DatabaseStatus"));
         left.Children.Add(Separator());
 
@@ -101,7 +99,6 @@ internal static class ProfessionalStatusBarExperience
 
         var right = new StackPanel
         {
-            Grid.IsSharedSizeScopeProperty = { },
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right
