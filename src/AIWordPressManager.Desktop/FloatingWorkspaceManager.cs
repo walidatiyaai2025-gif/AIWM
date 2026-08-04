@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -12,12 +13,12 @@ internal static class FloatingWorkspaceManager
 
     private static readonly (string Tag, string Label)[] ManagedPanels =
     [
-        ("PriorityResolutionPanel", "Priority"),
-        ("ReviewWorkbenchesPanel", "Review"),
-        ("ContentQualityBatchPanel", "Quality"),
-        ("QuickFixJourneyPanel", "Journey"),
-        ("MediaAnalysisPanel", "Media"),
-        ("AiCopilotInboxPanel", "AI Inbox")
+        ("PriorityResolutionPanel", "Priority resolution"),
+        ("ReviewWorkbenchesPanel", "Review workbenches"),
+        ("ContentQualityBatchPanel", "Content quality"),
+        ("QuickFixJourneyPanel", "Journey and quick fixes"),
+        ("MediaAnalysisPanel", "Media analysis"),
+        ("AiCopilotInboxPanel", "AI Copilot inbox")
     ];
 
     [ModuleInitializer]
@@ -36,73 +37,112 @@ internal static class FloatingWorkspaceManager
         if (Attached.TryGetValue(window, out _)) return;
         if (window.Content is not Grid root) return;
 
-        var state = new State(root);
+        var state = new State(window, root);
         Attached.Add(window, state);
 
-        var launcher = BuildLauncher(state);
-        Grid.SetRow(launcher, 3);
-        Panel.SetZIndex(launcher, 500);
-        root.Children.Add(launcher);
+        state.Scrim = BuildScrim(state);
+        Grid.SetRow(state.Scrim, 3);
+        Panel.SetZIndex(state.Scrim, 900);
+        root.Children.Add(state.Scrim);
+
+        state.Launcher = BuildLauncher(state);
+        Grid.SetRow(state.Launcher, 3);
+        Panel.SetZIndex(state.Launcher, 850);
+        root.Children.Add(state.Launcher);
+
+        window.PreviewKeyDown += (_, args) =>
+        {
+            if (args.Key != Key.Escape || state.ActiveTag is null) return;
+            state.CloseActivePanel();
+            args.Handled = true;
+        };
 
         var timer = new DispatcherTimer(DispatcherPriority.ContextIdle, window.Dispatcher)
         {
-            Interval = TimeSpan.FromMilliseconds(300)
+            Interval = TimeSpan.FromMilliseconds(350)
         };
-        timer.Tick += (_, _) => Synchronize(state, launcher);
+        timer.Tick += (_, _) => Synchronize(state);
         window.Closed += (_, _) => timer.Stop();
         timer.Start();
-        Synchronize(state, launcher);
+        Synchronize(state);
     }
 
-    private static Border BuildLauncher(State state)
+    private static Border BuildScrim(State state)
     {
-        var shell = new Border
+        var scrim = new Border
         {
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 18, 18),
-            Padding = new Thickness(8),
-            CornerRadius = new CornerRadius(12),
-            Background = Brush("SurfaceBrush", Brushes.White),
-            BorderBrush = Brush("BorderBrush", Brushes.LightGray),
-            BorderThickness = new Thickness(1),
+            Background = new SolidColorBrush(Color.FromArgb(72, 0, 0, 0)),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
             Visibility = Visibility.Collapsed,
-            Tag = "FloatingWorkspaceLauncher"
+            IsHitTestVisible = true,
+            Tag = "FloatingWorkspaceScrim"
+        };
+        scrim.MouseLeftButtonDown += (_, args) =>
+        {
+            state.CloseActivePanel();
+            args.Handled = true;
+        };
+        return scrim;
+    }
+
+    private static Button BuildLauncher(State state)
+    {
+        var button = new Button
+        {
+            Content = "Workspace tools ▾",
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 10, 16, 0),
+            Padding = new Thickness(12, 7, 12, 7),
+            MinWidth = 138,
+            Visibility = Visibility.Collapsed,
+            Tag = "FloatingWorkspaceLauncher",
+            ToolTip = "Open analysis and review tools"
         };
 
-        var stack = new StackPanel();
-        shell.Child = stack;
-        stack.Children.Add(new TextBlock
+        button.Click += (_, _) =>
         {
-            Text = "Workspace tools",
-            Margin = new Thickness(4, 0, 4, 6),
-            FontWeight = FontWeights.SemiBold,
-            Foreground = Brush("TextPrimaryBrush", Brushes.Black)
-        });
-
-        var actions = new WrapPanel();
-        stack.Children.Add(actions);
-        foreach (var managed in ManagedPanels)
-        {
-            var button = new Button
-            {
-                Content = managed.Label,
-                Tag = $"Launcher:{managed.Tag}",
-                Margin = new Thickness(0, 0, 6, 4),
-                Padding = new Thickness(9, 5, 9, 5),
-                Visibility = Visibility.Collapsed
-            };
-            button.Click += (_, _) =>
-            {
-                state.OpenPanel(managed.Tag);
-                Synchronize(state, shell);
-            };
-            actions.Children.Add(button);
-        }
-        return shell;
+            RebuildContextMenu(state, button);
+            if (button.ContextMenu is null || button.ContextMenu.Items.Count == 0) return;
+            button.ContextMenu.PlacementTarget = button;
+            button.ContextMenu.IsOpen = true;
+        };
+        return button;
     }
 
-    private static void Synchronize(State state, Border launcher)
+    private static void RebuildContextMenu(State state, Button launcher)
+    {
+        var menu = new ContextMenu();
+        foreach (var managed in ManagedPanels)
+        {
+            if (FindByTag<Border>(state.Root, managed.Tag) is null) continue;
+            var item = new MenuItem
+            {
+                Header = managed.Label,
+                Tag = managed.Tag,
+                Padding = new Thickness(12, 7, 18, 7)
+            };
+            item.Click += (_, _) => state.OpenPanel(managed.Tag);
+            menu.Items.Add(item);
+        }
+
+        if (menu.Items.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+            var close = new MenuItem
+            {
+                Header = "Close workspace",
+                IsEnabled = state.ActiveTag is not null,
+                Padding = new Thickness(12, 7, 18, 7)
+            };
+            close.Click += (_, _) => state.CloseActivePanel();
+            menu.Items.Add(close);
+        }
+        launcher.ContextMenu = menu;
+    }
+
+    private static void Synchronize(State state)
     {
         var panels = ManagedPanels
             .Select(x => (Definition: x, Panel: FindByTag<Border>(state.Root, x.Tag)))
@@ -110,84 +150,94 @@ internal static class FloatingWorkspaceManager
             .Select(x => (x.Definition, Panel: x.Panel!))
             .ToArray();
 
-        foreach (var item in panels)
-            EnsureCloseButton(item.Panel, item.Definition.Tag, state);
-
-        var naturallyVisible = panels
-            .Where(x => x.Panel.Visibility == Visibility.Visible && !state.Dismissed.Contains(x.Definition.Tag))
-            .ToArray();
-
-        if (state.ActiveTag is not null)
-        {
-            var active = panels.FirstOrDefault(x => x.Definition.Tag == state.ActiveTag);
-            if (active.Panel is null)
-                state.ActiveTag = null;
-        }
-
-        if (state.ActiveTag is null && naturallyVisible.Length > 0)
-            state.ActiveTag = naturallyVisible[0].Definition.Tag;
+        state.Launcher.Visibility = panels.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var item in panels)
         {
-            var shouldShow = item.Definition.Tag == state.ActiveTag && !state.Dismissed.Contains(item.Definition.Tag);
-            if (!shouldShow)
-                item.Panel.Visibility = Visibility.Collapsed;
+            PreparePanel(item.Panel, item.Definition.Tag, state);
+
+            // The feature timers may set Visibility back to Visible. The manager is the
+            // only authority allowed to expose a workspace panel.
+            var shouldShow = state.ActiveTag == item.Definition.Tag;
+            item.Panel.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
+            item.Panel.IsHitTestVisible = shouldShow;
         }
 
-        var anyLauncherButton = false;
-        foreach (var managed in ManagedPanels)
-        {
-            var button = FindByTag<Button>(launcher, $"Launcher:{managed.Tag}");
-            if (button is null) continue;
-            var exists = panels.Any(x => x.Definition.Tag == managed.Tag);
-            var canOpen = exists && (state.Dismissed.Contains(managed.Tag) || state.ActiveTag != managed.Tag);
-            button.Visibility = canOpen ? Visibility.Visible : Visibility.Collapsed;
-            anyLauncherButton |= canOpen;
-        }
-        launcher.Visibility = anyLauncherButton ? Visibility.Visible : Visibility.Collapsed;
+        if (state.ActiveTag is not null && panels.All(x => x.Definition.Tag != state.ActiveTag))
+            state.ActiveTag = null;
+
+        state.Scrim.Visibility = state.ActiveTag is null ? Visibility.Collapsed : Visibility.Visible;
+        state.Scrim.IsHitTestVisible = state.ActiveTag is not null;
     }
 
-    private static void EnsureCloseButton(Border panel, string tag, State state)
+    private static void PreparePanel(Border panel, string tag, State state)
     {
-        if (panel.Child is not StackPanel stack) return;
-        if (FindByTag<Button>(stack, $"Close:{tag}") is not null) return;
+        panel.HorizontalAlignment = HorizontalAlignment.Right;
+        panel.VerticalAlignment = VerticalAlignment.Top;
+        panel.Margin = new Thickness(20, 60, 28, 20);
+        panel.MaxWidth = 560;
+        panel.MaxHeight = 680;
+        panel.IsHitTestVisible = false;
+        Panel.SetZIndex(panel, 920);
 
+        if (panel.Child is not StackPanel originalStack) return;
+        if (FindByTag<Button>(panel, $"Close:{tag}") is not null) return;
+
+        var content = panel.Child;
+        panel.Child = null;
+
+        var dock = new DockPanel { LastChildFill = true };
         var close = new Button
         {
             Content = "×",
             Tag = $"Close:{tag}",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, -8, -8, 2),
-            Padding = new Thickness(8, 2, 8, 2),
-            FontSize = 16,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(8, -8, -8, 6),
+            Padding = new Thickness(9, 2, 9, 2),
+            FontSize = 17,
             FontWeight = FontWeights.Bold,
-            ToolTip = "Close this workspace panel"
+            ToolTip = "Close (Esc)"
         };
-        close.Click += (_, _) =>
+        DockPanel.SetDock(close, Dock.Top);
+        close.Click += (_, args) =>
         {
-            state.Dismissed.Add(tag);
-            if (state.ActiveTag == tag) state.ActiveTag = null;
-            panel.Visibility = Visibility.Collapsed;
+            state.CloseActivePanel();
+            args.Handled = true;
         };
-        stack.Children.Insert(0, close);
+        dock.Children.Add(close);
+
+        var viewer = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = content,
+            MaxHeight = 620
+        };
+        dock.Children.Add(viewer);
+        panel.Child = dock;
+
+        panel.MouseLeftButtonDown += (_, args) => args.Handled = true;
     }
 
-    private sealed class State(Grid root)
+    private sealed class State(MainWindow window, Grid root)
     {
+        public MainWindow Window { get; } = window;
         public Grid Root { get; } = root;
-        public HashSet<string> Dismissed { get; } = new(StringComparer.Ordinal);
+        public required Border Scrim { get; set; }
+        public required Button Launcher { get; set; }
         public string? ActiveTag { get; set; }
 
         public void OpenPanel(string tag)
         {
-            Dismissed.Remove(tag);
             ActiveTag = tag;
-            foreach (var managed in ManagedPanels)
-            {
-                var panel = FindByTag<Border>(Root, managed.Tag);
-                if (panel is null) continue;
-                panel.Visibility = managed.Tag == tag ? Visibility.Visible : Visibility.Collapsed;
-            }
+            Synchronize(this);
+        }
+
+        public void CloseActivePanel()
+        {
+            ActiveTag = null;
+            Synchronize(this);
         }
     }
 
@@ -202,7 +252,4 @@ internal static class FloatingWorkspaceManager
         }
         return null;
     }
-
-    private static Brush Brush(string key, Brush fallback) =>
-        global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 }
