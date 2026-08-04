@@ -157,10 +157,11 @@ internal static class SystemAuthorizationExperience
 
     private static void RefreshOpenWindows()
     {
-        if (Application.Current is null)
+        var application = global::System.Windows.Application.Current;
+        if (application is null)
             return;
 
-        foreach (Window window in Application.Current.Windows)
+        foreach (Window window in application.Windows)
         {
             foreach (var button in FindVisualChildren<Button>(window))
                 ApplyPermission(button);
