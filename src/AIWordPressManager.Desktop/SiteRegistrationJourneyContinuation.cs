@@ -36,7 +36,7 @@ internal static class SiteRegistrationJourneyContinuation
         {
             await window.Dispatcher.InvokeAsync(async () =>
             {
-                viewModel.UiOperation.Start(
+                viewModel.Operations.Start(
                     "Website connected",
                     "Preparing the first synchronization",
                     "Refreshing the saved site and opening WordPress Explorer.",
@@ -46,7 +46,7 @@ internal static class SiteRegistrationJourneyContinuation
                 {
                     await viewModel.Sites.LoadAsync();
 
-                    viewModel.UiOperation.Report(
+                    viewModel.Operations.Report(
                         70,
                         "Opening synchronization",
                         "The site is registered. The next required stage is the first WordPress synchronization.");
@@ -54,12 +54,12 @@ internal static class SiteRegistrationJourneyContinuation
                     viewModel.NavigateCommand.Execute("WordPress Explorer");
                     viewModel.RefreshCompleteUserJourney();
 
-                    viewModel.UiOperation.Complete(
+                    viewModel.Operations.Complete(
                         "Website registration is complete. Start the first synchronization to load posts, pages, media, taxonomy, theme and plugin data into SQLite.");
                 }
                 catch (Exception ex)
                 {
-                    viewModel.UiOperation.Fail(
+                    viewModel.Operations.Fail(
                         "The website was saved, but the next journey stage could not open automatically: " + ex.Message);
                 }
             }, DispatcherPriority.ContextIdle);
