@@ -92,7 +92,7 @@ internal static class WorkPageFocusExperience
             Background = Brush("SurfaceAltBrush", Brushes.WhiteSmoke),
             BorderBrush = Brush("BorderBrush", Brushes.LightGray),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(14, 0),
+            Padding = new Thickness(14, 0, 14, 0),
             Tag = "PrimaryWorkActionBar"
         };
 
