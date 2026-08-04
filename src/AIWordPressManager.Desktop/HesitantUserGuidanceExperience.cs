@@ -37,18 +37,17 @@ namespace AIWordPressManager.Desktop.ViewModels
             }
         }
 
+        internal void RefreshHesitantUserGuidance()
+        {
+            OnPropertyChanged(nameof(JourneyCompletedSummary));
+            OnPropertyChanged(nameof(JourneyRemainingSummary));
+        }
+
         private async Task ExplainCurrentJourneyAsync()
         {
             await _dialogService.ShowInformationAsync(
                 "Why this is the next step",
                 $"Current recommendation: {CurrentJourneyStepTitle}\n\n{CurrentJourneyStepDescription}\n\nWhy: {JourneyProfessionalReason}\n\nCompleted: {JourneyCompletedSummary}\n\nRemaining: {JourneyRemainingSummary}\n\nThe application uses the selected site, SQLite snapshot, audit results, approvals, failed jobs, execution state, and safety controls to choose this action.");
-        }
-
-        partial void OnDashboardJourneyProgressChanged(int value)
-        {
-            EvaluateProfessionalJourney();
-            OnPropertyChanged(nameof(JourneyCompletedSummary));
-            OnPropertyChanged(nameof(JourneyRemainingSummary));
         }
     }
 }
@@ -69,7 +68,7 @@ namespace AIWordPressManager.Desktop
             window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
             {
                 var dashboardTitle = FindTextBlock(window, "AI WordPress Optimization Journey");
-                if (dashboardTitle?.Parent is not StackPanel titlePanel || titlePanel.Parent is not Grid headerGrid) return;
+                if (dashboardTitle?.Parent is not StackPanel || dashboardTitle.Parent is not StackPanel titlePanel || titlePanel.Parent is not Grid headerGrid) return;
                 if (headerGrid.Children.OfType<Border>().Any(x => x.Tag?.ToString() == "HesitantUserGuide")) return;
 
                 if (headerGrid.RowDefinitions.Count == 0)
