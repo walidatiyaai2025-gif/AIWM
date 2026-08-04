@@ -12,9 +12,10 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
 {
     private static readonly string[] StepNames =
     [
-        "Basic site information", "WordPress authentication", "REST API test", "Site discovery",
-        "SEO plugin detection", "Page builder detection", "WooCommerce detection", "AI configuration",
-        "Staging configuration", "Permissions and automation", "Initial scan summary", "Review and save"
+        "Website information",
+        "WordPress credentials",
+        "Test and discover",
+        "Review and start synchronization"
     ];
 
     private readonly IWordPressConnectionTester _connectionTester;
@@ -46,7 +47,7 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
     [ObservableProperty] private bool _allowDraftCreation = true;
     [ObservableProperty] private bool _allowAutomaticPublishing;
     [ObservableProperty] private string _stagingUrl = string.Empty;
-    [ObservableProperty] private string _discoverySummary = "Run the connection test first. Discovery information will be collected from WordPress REST API.";
+    [ObservableProperty] private string _discoverySummary = "Run the connection test to discover the WordPress website.";
     [ObservableProperty] private bool _isDiagnosticsOpen;
     [ObservableProperty] private string _diagnosticsTitle = "WordPress connection diagnostics";
     [ObservableProperty] private string _diagnosticsText = "No connection test has been run yet.";
@@ -57,19 +58,20 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
     public bool IsFirstStep => StepIndex == 0;
     public bool IsLastStep => StepIndex == StepNames.Length - 1;
     public bool HasCapturedPassword => !string.IsNullOrWhiteSpace(ApplicationPassword);
+    public string SaveButtonText => "Save & start first sync";
 
     public bool ShowBasicStep => StepIndex == 0;
     public bool ShowAuthenticationStep => StepIndex == 1;
     public bool ShowConnectionStep => StepIndex == 2;
-    public bool ShowDiscoveryStep => StepIndex == 3;
-    public bool ShowSeoStep => StepIndex == 4;
-    public bool ShowBuilderStep => StepIndex == 5;
-    public bool ShowWooCommerceStep => StepIndex == 6;
-    public bool ShowAiStep => StepIndex == 7;
-    public bool ShowStagingStep => StepIndex == 8;
-    public bool ShowPermissionsStep => StepIndex == 9;
-    public bool ShowSummaryStep => StepIndex == 10;
-    public bool ShowReviewStep => StepIndex == 11;
+    public bool ShowDiscoveryStep => false;
+    public bool ShowSeoStep => false;
+    public bool ShowBuilderStep => false;
+    public bool ShowWooCommerceStep => false;
+    public bool ShowAiStep => false;
+    public bool ShowStagingStep => false;
+    public bool ShowPermissionsStep => false;
+    public bool ShowSummaryStep => false;
+    public bool ShowReviewStep => StepIndex == 3;
 
     public event EventHandler? SiteSaved;
 
@@ -81,6 +83,7 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
         _connectionTester = connectionTester;
         _siteManagementService = siteManagementService;
         _validator = validator;
+
         for (var index = 0; index < StepNames.Length; index++)
             Steps.Add(new WizardStepItemViewModel(index + 1, StepNames[index]));
 
@@ -105,21 +108,48 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
     private void Back()
     {
         ValidationMessage = string.Empty;
-        if (StepIndex > 0) StepIndex--;
+        if (StepIndex > 0)
+            StepIndex--;
     }
 
     private async Task NextAsync()
     {
         ValidationMessage = string.Empty;
+
         if (StepIndex == 0)
         {
-            if (string.IsNullOrWhiteSpace(SiteName)) { ValidationMessage = "Site name is required."; return; }
-            if (!Uri.TryCreate(SiteUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) { ValidationMessage = "Enter a valid HTTP or HTTPS URL."; return; }
+            if (string.IsNullOrWhiteSpace(SiteName))
+            {
+                ValidationMessage = "Site name is required.";
+                return;
+            }
+
+            if (!Uri.TryCreate(SiteUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+            {
+                ValidationMessage = "Enter a valid HTTP or HTTPS URL.";
+                return;
+            }
+
+            var duplicate = await FindDuplicateAsync();
+            if (duplicate is not null)
+            {
+                ShowDuplicateMessage(duplicate.Name, duplicate.SiteUrl);
+                return;
+            }
         }
         else if (StepIndex == 1)
         {
-            if (string.IsNullOrWhiteSpace(UserName)) { ValidationMessage = "WordPress username is required."; return; }
-            if (NormalizePassword(ApplicationPassword).Length < 8) { ValidationMessage = "Enter a valid WordPress Application Password."; return; }
+            if (string.IsNullOrWhiteSpace(UserName))
+            {
+                ValidationMessage = "WordPress username is required.";
+                return;
+            }
+
+            if (NormalizePassword(ApplicationPassword).Length < 8)
+            {
+                ValidationMessage = "Enter a valid WordPress Application Password.";
+                return;
+            }
         }
         else if (StepIndex == 2 && !IsConnectionSuccessful)
         {
@@ -127,8 +157,8 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
             return;
         }
 
-        if (StepIndex < StepNames.Length - 1) StepIndex++;
-        await Task.CompletedTask;
+        if (StepIndex < StepNames.Length - 1)
+            StepIndex++;
     }
 
     private async Task TestConnectionAsync()
@@ -141,11 +171,20 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
             return;
         }
 
+        var duplicate = await FindDuplicateAsync();
+        if (duplicate is not null)
+        {
+            ShowDuplicateMessage(duplicate.Name, duplicate.SiteUrl);
+            return;
+        }
+
         SetBusy(true);
         ConnectionMessage = "Testing WordPress REST API and credentials…";
         try
         {
-            _connectionResult = await _connectionTester.TestAsync(new(SiteUrl, UserName, NormalizePassword(ApplicationPassword)));
+            _connectionResult = await _connectionTester.TestAsync(
+                new WordPressConnectionRequest(SiteUrl, UserName, NormalizePassword(ApplicationPassword)));
+
             IsConnectionSuccessful = _connectionResult.IsSuccess;
             ConnectionMessage = _connectionResult.Message;
             DiagnosticsTitle = _connectionResult.IsSuccess
@@ -155,10 +194,12 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
                 ? _connectionResult.Message
                 : _connectionResult.Diagnostics;
             IsDiagnosticsOpen = true;
+
             if (_connectionResult.IsSuccess)
             {
                 if (string.IsNullOrWhiteSpace(SiteName) && !string.IsNullOrWhiteSpace(_connectionResult.SiteName))
                     SiteName = _connectionResult.SiteName;
+
                 DiscoverySummary = BuildDiscoverySummary(_connectionResult);
             }
         }
@@ -170,7 +211,10 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
             DiagnosticsText = $"{ex.GetType().FullName}: {ex.Message}{Environment.NewLine}{ex.StackTrace}";
             IsDiagnosticsOpen = true;
         }
-        finally { SetBusy(false); }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
     private async Task SaveAsync()
@@ -185,22 +229,83 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
         SetBusy(true);
         try
         {
-            var result = await _siteManagementService.CreateAsync(new(
-                SiteName, SiteUrl, UserName, NormalizePassword(ApplicationPassword),
-                _connectionResult.HomeUrl, _connectionResult.WordPressVersion, _connectionResult.LanguageCode));
-            if (result.IsFailure)
+            var duplicate = await FindDuplicateAsync();
+            if (duplicate is not null)
             {
-                ValidationMessage = result.Error.Message;
+                ShowDuplicateMessage(duplicate.Name, duplicate.SiteUrl);
                 return;
             }
+
+            var result = await _siteManagementService.CreateAsync(new CreateSiteRequest(
+                SiteName,
+                NormalizeUrl(SiteUrl),
+                UserName,
+                NormalizePassword(ApplicationPassword),
+                _connectionResult.HomeUrl,
+                _connectionResult.WordPressVersion,
+                _connectionResult.LanguageCode));
+
+            if (result.IsFailure)
+            {
+                ValidationMessage = IsDuplicateError(result.Error.Message)
+                    ? BuildDuplicateMessage(SiteName, SiteUrl)
+                    : result.Error.Message;
+                return;
+            }
+
             IsOpen = false;
             SiteSaved?.Invoke(this, EventArgs.Empty);
         }
+        catch (Exception ex) when (IsDuplicateError(ex.ToString()))
+        {
+            ValidationMessage = BuildDuplicateMessage(SiteName, SiteUrl);
+        }
         catch (Exception ex)
         {
-            ValidationMessage = "Could not save the site: " + ex.Message;
+            ValidationMessage = "The website could not be saved. No WordPress content was changed. Details: " + GetUsefulMessage(ex);
         }
-        finally { SetBusy(false); }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async Task<dynamic?> FindDuplicateAsync()
+    {
+        var normalized = NormalizeUrl(SiteUrl);
+        var sites = await _siteManagementService.GetSitesAsync();
+        return sites.FirstOrDefault(site =>
+            string.Equals(NormalizeUrl(site.SiteUrl), normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void ShowDuplicateMessage(string name, string url)
+    {
+        IsConnectionSuccessful = false;
+        ValidationMessage = BuildDuplicateMessage(name, url);
+        ConnectionMessage = "This website is already registered. Select its existing card to continue.";
+        DiagnosticsTitle = "Website already registered";
+        DiagnosticsText = ValidationMessage;
+        IsDiagnosticsOpen = true;
+    }
+
+    private static string BuildDuplicateMessage(string name, string url) =>
+        $"This website is already registered.{Environment.NewLine}{Environment.NewLine}" +
+        $"Website: {name}{Environment.NewLine}" +
+        $"URL: {NormalizeUrl(url)}{Environment.NewLine}{Environment.NewLine}" +
+        "No duplicate website was created. Close this wizard, select the existing website card, then use right-click to synchronize, retest, open WordPress admin, or remove it.";
+
+    private static bool IsDuplicateError(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        (value.Contains("UNIQUE constraint failed: Sites.SiteUrl", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("already registered", StringComparison.OrdinalIgnoreCase) ||
+         value.Contains("duplicate", StringComparison.OrdinalIgnoreCase));
+
+    private static string GetUsefulMessage(Exception exception)
+    {
+        var current = exception;
+        while (current.InnerException is not null)
+            current = current.InnerException;
+        return current.Message;
     }
 
     partial void OnApplicationPasswordChanged(string value)
@@ -225,6 +330,8 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
 
     partial void OnSiteUrlChanged(string value)
     {
+        IsConnectionSuccessful = false;
+        _connectionResult = null;
         if (Uri.TryCreate(value, UriKind.Absolute, out _) && ValidationMessage.Contains("URL", StringComparison.OrdinalIgnoreCase))
             ValidationMessage = string.Empty;
     }
@@ -285,13 +392,13 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
     private void Reset()
     {
         StepIndex = 0;
-        SiteName = "NOB";
-        SiteUrl = "https://notonlybook.com";
-        UserName = "Walid";
+        SiteName = string.Empty;
+        SiteUrl = "https://";
+        UserName = string.Empty;
         ApplicationPassword = string.Empty;
         ValidationMessage = string.Empty;
         ConnectionMessage = "Connection has not been tested.";
-        DiscoverySummary = "Run the connection test first. Discovery information will be collected from WordPress REST API.";
+        DiscoverySummary = "Run the connection test to discover the WordPress website.";
         IsConnectionSuccessful = false;
         IsBusy = false;
         EnableAiFeatures = true;
@@ -307,7 +414,27 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
         NotifyCommands();
     }
 
-    private static string NormalizePassword(string value) => (value ?? string.Empty).Replace(" ", string.Empty).Trim();
+    private static string NormalizePassword(string value) =>
+        (value ?? string.Empty).Replace(" ", string.Empty).Trim();
+
+    private static string NormalizeUrl(string? value)
+    {
+        if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri))
+            return (value ?? string.Empty).Trim().TrimEnd('/');
+
+        var builder = new UriBuilder(uri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty,
+            Host = uri.Host.ToLowerInvariant()
+        };
+
+        if ((builder.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) && builder.Port == 443) ||
+            (builder.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) && builder.Port == 80))
+            builder.Port = -1;
+
+        return builder.Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+    }
 
     private static string BuildDiscoverySummary(WordPressConnectionResult result)
     {
@@ -317,6 +444,8 @@ public sealed partial class AddSiteWizardViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(result.WordPressVersion)) values.Add($"WordPress: {result.WordPressVersion}");
         if (!string.IsNullOrWhiteSpace(result.LanguageCode)) values.Add($"Language: {result.LanguageCode}");
         if (result.CurrentUserId.HasValue) values.Add($"Authenticated user ID: {result.CurrentUserId.Value}");
-        return values.Count == 0 ? "Connection succeeded. Additional discovery will run during the initial scan." : string.Join(Environment.NewLine, values);
+        return values.Count == 0
+            ? "Connection succeeded. The initial synchronization will discover the remaining website data."
+            : string.Join(Environment.NewLine, values);
     }
 }
