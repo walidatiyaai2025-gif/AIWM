@@ -105,7 +105,7 @@ internal static class CompactHeaderAndOverlayDiagnosticsExperience
                 "Logs");
             Directory.CreateDirectory(directory);
             var file = Path.Combine(directory, "auto-overlay-attempts.log");
-            var page = (Application.Current?.MainWindow?.DataContext as MainWindowViewModel)?.CurrentPage ?? "Unknown";
+            var page = (System.Windows.Application.Current?.MainWindow?.DataContext as MainWindowViewModel)?.CurrentPage ?? "Unknown";
             var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} | Page={page} | Type={element.GetType().FullName} | Name={element.Name} | Text={Normalize(text)}{Environment.NewLine}";
             File.AppendAllText(file, line, Encoding.UTF8);
         }
