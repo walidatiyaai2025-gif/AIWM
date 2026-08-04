@@ -83,10 +83,10 @@ internal static class OperationHistoryPopupExperience
             Background = ResolveBrush(window, "SurfaceAltBrush", Brushes.WhiteSmoke),
             Padding = new Thickness(5),
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            ScrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            ScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             IsTabStop = false
         };
+        ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
         list.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("Operations.History"));
 
         var textFactory = new FrameworkElementFactory(typeof(TextBlock));
