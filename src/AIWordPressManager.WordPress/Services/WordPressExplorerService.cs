@@ -67,10 +67,34 @@ public sealed class WordPressExplorerService(HttpClient httpClient, ISiteManagem
         var all=new List<WordPressMediaItem>(); var total=0; var totalPages=1;
         for(var page=1; page<=Math.Min(totalPages,MaximumPagesPerCollection); page++)
         {
-            var uri=new Uri($"{connection.SiteUrl.TrimEnd('/')}/wp-json/wp/v2/media?context=edit&per_page={PageSize}&page={page}&orderby=modified&order=desc&_fields=id,title,slug,media_type,mime_type,source_url,modified_gmt");
+            var uri=new Uri($"{connection.SiteUrl.TrimEnd('/')}/wp-json/wp/v2/media?context=edit&per_page={PageSize}&page={page}&orderby=modified&order=desc&_fields=id,title,slug,media_type,mime_type,source_url,modified_gmt,alt_text,caption,description,media_details");
             using var response=await SendAsync(connection,uri,ct); var body=await response.Content.ReadAsStringAsync(ct); if(!response.IsSuccessStatusCode) return Result.Failure<PagedResult<WordPressMediaItem>>(CreateHttpError(response,body));
             total=ReadHeaderInt(response,"X-WP-Total",total); totalPages=ReadHeaderInt(response,"X-WP-TotalPages",1);
-            using var doc=JsonDocument.Parse(body); all.AddRange(doc.RootElement.EnumerateArray().Select(x=>new WordPressMediaItem(x.GetProperty("id").GetInt32(),ReadRenderedTitle(x),ReadString(x,"slug"),ReadString(x,"media_type"),ReadString(x,"mime_type"),ReadString(x,"source_url"),ReadDate(x,"modified_gmt"))));
+            using var doc=JsonDocument.Parse(body);
+            all.AddRange(doc.RootElement.EnumerateArray().Select(x =>
+            {
+                var details = x.TryGetProperty("media_details", out var mediaDetails) && mediaDetails.ValueKind == JsonValueKind.Object
+                    ? mediaDetails
+                    : default;
+                var sourceUrl = ReadString(x,"source_url");
+                return new WordPressMediaItem(
+                    x.GetProperty("id").GetInt32(),
+                    ReadRenderedTitle(x),
+                    ReadString(x,"slug"),
+                    ReadString(x,"media_type"),
+                    ReadString(x,"mime_type"),
+                    sourceUrl,
+                    ReadDate(x,"modified_gmt"))
+                {
+                    AltText = WebUtility.HtmlDecode(ReadString(x,"alt_text")),
+                    Caption = WebUtility.HtmlDecode(ReadRenderedObject(x,"caption")),
+                    Description = WebUtility.HtmlDecode(ReadRenderedObject(x,"description")),
+                    Width = ReadInt(details,"width"),
+                    Height = ReadInt(details,"height"),
+                    FileSizeBytes = ReadLong(details,"filesize"),
+                    FileName = ReadString(details,"file") is { Length: > 0 } file ? file : Path.GetFileName(sourceUrl)
+                };
+            }));
         }
         return Result.Success(new PagedResult<WordPressMediaItem>(all,total));
     }
@@ -79,9 +103,11 @@ public sealed class WordPressExplorerService(HttpClient httpClient, ISiteManagem
     private static int ReadHeaderInt(HttpResponseMessage r,string n,int f)=>r.Headers.TryGetValues(n,out var v)&&int.TryParse(v.FirstOrDefault(),out var p)?p:f;
     private static Error CreateHttpError(HttpResponseMessage r,string body) { string? m=null; try { using var d=JsonDocument.Parse(body); if(d.RootElement.TryGetProperty("message",out var v)) m=v.GetString(); } catch(JsonException){} m??=$"WordPress returned HTTP {(int)r.StatusCode} ({r.ReasonPhrase})."; return r.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden?Error.Unauthorized(m):Error.Failure(m); }
     private static string ReadRenderedTitle(JsonElement i)=>i.TryGetProperty("title",out var t)&&t.ValueKind==JsonValueKind.Object&&t.TryGetProperty("rendered",out var r)?WebUtility.HtmlDecode(r.GetString()??"(Untitled)"):"(Untitled)";
-    private static string ReadRenderedObject(JsonElement i,string p)=>i.TryGetProperty(p,out var v)&&v.ValueKind==JsonValueKind.Object&&v.TryGetProperty("rendered",out var r)?r.GetString()??string.Empty:string.Empty;
-    private static string ReadString(JsonElement i,string p)=>i.TryGetProperty(p,out var v)?v.GetString()??string.Empty:string.Empty;
+    private static string ReadRenderedObject(JsonElement i,string p)=>i.ValueKind==JsonValueKind.Object&&i.TryGetProperty(p,out var v)&&v.ValueKind==JsonValueKind.Object&&v.TryGetProperty("rendered",out var r)?r.GetString()??string.Empty:string.Empty;
+    private static string ReadString(JsonElement i,string p)=>i.ValueKind==JsonValueKind.Object&&i.TryGetProperty(p,out var v)&&v.ValueKind!=JsonValueKind.Null?v.GetString()??string.Empty:string.Empty;
     private static DateTimeOffset? ReadDate(JsonElement i,string p)=>i.TryGetProperty(p,out var v)&&DateTimeOffset.TryParse(v.GetString(),out var d)?d:null;
+    private static int? ReadInt(JsonElement i,string p)=>i.ValueKind==JsonValueKind.Object&&i.TryGetProperty(p,out var v)&&v.TryGetInt32(out var value)?value:null;
+    private static long? ReadLong(JsonElement i,string p)=>i.ValueKind==JsonValueKind.Object&&i.TryGetProperty(p,out var v)&&v.TryGetInt64(out var value)?value:null;
     private sealed record PagedResult<T>(IReadOnlyList<T> Items,int Total);
     private sealed record TermItem(int Id,string Name,string Slug,int Count);
 }
