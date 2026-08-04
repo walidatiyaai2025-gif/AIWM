@@ -13,7 +13,7 @@ public sealed partial class AiStudioViewModel : ObservableObject
     private readonly IApplicationSettingsService _settingsService;
     private readonly ISecretProtectionService _secretProtection;
     private readonly IReadOnlyDictionary<string, IAiProvider> _providers;
-    private readonly AIWordPressManager.Desktop.Services.UiOperationService _operations;
+    private readonly global::AIWordPressManager.Desktop.Services.UiOperationService _operations;
 
     public ObservableCollection<string> Providers { get; } = [];
     public IAsyncRelayCommand RunCommand { get; }
@@ -33,7 +33,7 @@ public sealed partial class AiStudioViewModel : ObservableObject
         IApplicationSettingsService settingsService,
         ISecretProtectionService secretProtection,
         IEnumerable<IAiProvider> providers,
-        AIWordPressManager.Desktop.Services.UiOperationService operations)
+        global::AIWordPressManager.Desktop.Services.UiOperationService operations)
     {
         _settingsService = settingsService;
         _secretProtection = secretProtection;
