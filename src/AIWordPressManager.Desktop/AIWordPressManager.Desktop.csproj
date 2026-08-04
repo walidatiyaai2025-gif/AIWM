@@ -5,10 +5,10 @@
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>Assets\Brand\app_icon.ico</ApplicationIcon>
-    <Version>2.0.6</Version>
-    <AssemblyVersion>2.0.6.0</AssemblyVersion>
-    <FileVersion>2.0.6.0</FileVersion>
-    <InformationalVersion>2.0.6</InformationalVersion>
+    <Version>2.0.7</Version>
+    <AssemblyVersion>2.0.7.0</AssemblyVersion>
+    <FileVersion>2.0.7.0</FileVersion>
+    <InformationalVersion>2.0.7</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\Brand\*.png" />
