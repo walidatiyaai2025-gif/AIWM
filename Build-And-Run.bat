@@ -45,34 +45,38 @@ if not exist "%DESKTOP_PROJECT%" (
     goto :failed
 )
 
-echo [1/7] Checking local Git state...
+echo [1/8] Stopping running AI WordPress Manager processes...
+call "%CD%\Kill-All-Processes.bat" /quiet >>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo [ERROR] Could not stop one or more application processes.
+    >>"%LOG_FILE%" echo [ERROR] Process shutdown failed.
+    goto :failed
+)
+
+echo [2/8] Checking local Git state...
 git status --short >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :git_failed
 
-echo [2/7] Pulling the latest main branch...
+echo [3/8] Pulling the latest main branch...
 git pull origin main >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :git_failed
 
-echo [3/7] Stopping .NET build servers...
+echo [4/8] Stopping .NET build servers...
 dotnet build-server shutdown >>"%LOG_FILE%" 2>&1
 
- echo [4/7] Removing bin and obj folders...
-for /d /r %%D in (bin,obj) do (
-    if exist "%%D" (
-        echo Removing %%D>>"%LOG_FILE%"
-        rd /s /q "%%D" >>"%LOG_FILE%" 2>&1
-    )
-)
+echo [5/8] Removing bin and obj folders...
+call "%CD%\Clean-All.bat" /quiet >>"%LOG_FILE%" 2>&1
+if errorlevel 1 goto :clean_failed
 
-echo [5/7] Restoring NuGet packages...
+echo [6/8] Restoring NuGet packages...
 dotnet restore "%SOLUTION%" --force >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :restore_failed
 
-echo [6/7] Building the Debug solution...
+echo [7/8] Building the Debug solution...
 dotnet build "%SOLUTION%" -c Debug --no-restore >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
-echo [7/7] Starting AI WordPress Manager...
+echo [8/8] Starting AI WordPress Manager Desktop...
 echo.
 >>"%LOG_FILE%" echo Build succeeded: %DATE% %TIME%
 
@@ -89,8 +93,13 @@ if not "%RUN_EXIT%"=="0" (
 goto :success
 
 :git_failed
-echo [ERROR] Git update failed. Local changes or network authentication may require attention.
+echo [ERROR] Git update failed. Local changes or authentication may require attention.
 >>"%LOG_FILE%" echo [ERROR] Git update failed.
+goto :failed
+
+:clean_failed
+echo [ERROR] Cleaning bin and obj folders failed. A process may still be locking files.
+>>"%LOG_FILE%" echo [ERROR] Clean failed.
 goto :failed
 
 :restore_failed
@@ -116,7 +125,7 @@ exit /b 0
 echo.
 echo ============================================================
 echo   PROCESS FAILED
- echo   Review: %LOG_FILE%
+echo   Review: %LOG_FILE%
 echo ============================================================
 echo.
 pause
