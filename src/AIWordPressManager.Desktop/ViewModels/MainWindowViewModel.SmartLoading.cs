@@ -46,7 +46,20 @@ public sealed partial class MainWindowViewModel
         try
         {
             await LoadSafelyAsync(module, loader, timeout: null);
-            _navigationLoadCompletedUtc[module] = DateTimeOffset.UtcNow;
+
+            // The existing safe loader reports failures through ApplicationDataStatus
+            // instead of rethrowing. Do not mark those attempts as fresh.
+            var failed = ApplicationDataStatus.StartsWith(
+                             $"{module} could not load:",
+                             StringComparison.OrdinalIgnoreCase) ||
+                         ApplicationDataStatus.StartsWith(
+                             $"{module} exceeded the startup time limit",
+                             StringComparison.OrdinalIgnoreCase);
+
+            if (failed)
+                _navigationLoadCompletedUtc.Remove(module);
+            else
+                _navigationLoadCompletedUtc[module] = DateTimeOffset.UtcNow;
         }
         finally
         {
