@@ -48,4 +48,12 @@ foreach ($file in $administrationFiles) {
     }
 }
 
+$systemLoginExperience = Join-Path $ProjectDirectory 'SystemLoginExperience.cs'
+Update-FileText -Path $systemLoginExperience -SuccessMessage 'Normalized SQLite transaction type in SystemLoginExperience.cs.' -Transform {
+    param($content)
+    $content.Replace(
+        'await using var transaction = await connection.BeginTransactionAsync(cancellationToken);',
+        'await using var transaction = connection.BeginTransaction();')
+}
+
 Write-Host 'Desktop source normalization completed.'
