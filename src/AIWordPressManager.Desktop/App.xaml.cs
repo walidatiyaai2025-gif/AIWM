@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Windows;
 using AIWordPressManager.Application.Abstractions;
 using AIWordPressManager.Application.Abstractions.Persistence;
@@ -19,6 +20,8 @@ namespace AIWordPressManager.Desktop;
 
 public partial class App : System.Windows.Application
 {
+    private static readonly TimeSpan GlobalErrorRepeatWindow = TimeSpan.FromSeconds(10);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _recentGlobalErrors = new(StringComparer.Ordinal);
     private IHost? _host;
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -141,19 +144,67 @@ public partial class App : System.Windows.Application
     {
         DispatcherUnhandledException += (_, args) =>
         {
-            _host?.Services.GetRequiredService<GlobalErrorPresenter>().Show(args.Exception, "WPF Dispatcher");
+            ReportGlobalException(args.Exception, "WPF Dispatcher", showToUser: true);
             args.Handled = true;
         };
+
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
-            Dispatcher.Invoke(() => _host?.Services.GetRequiredService<GlobalErrorPresenter>().Show(args.Exception, "Background Task"));
+            // Background-task failures are logged, but they must not open a modal window
+            // or synchronously marshal back to the UI thread.
+            ReportGlobalException(args.Exception, "Background Task", showToUser: false);
             args.SetObserved();
         };
+
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            if (args.ExceptionObject is Exception ex)
-                Dispatcher.Invoke(() => _host?.Services.GetRequiredService<GlobalErrorPresenter>().Show(ex, "AppDomain"));
+            if (args.ExceptionObject is Exception exception)
+                ReportGlobalException(exception, "AppDomain", showToUser: args.IsTerminating);
         };
+    }
+
+    private void ReportGlobalException(Exception exception, string source, bool showToUser)
+    {
+        try
+        {
+            Log.Error(exception, "Unhandled application exception from {Source}", source);
+
+            var now = DateTimeOffset.UtcNow;
+            var fingerprint = $"{source}|{exception.GetType().FullName}|{exception.Message}";
+            if (_recentGlobalErrors.TryGetValue(fingerprint, out var previous) &&
+                now - previous < GlobalErrorRepeatWindow)
+            {
+                return;
+            }
+
+            _recentGlobalErrors[fingerprint] = now;
+            foreach (var entry in _recentGlobalErrors)
+            {
+                if (now - entry.Value > TimeSpan.FromMinutes(2))
+                    _recentGlobalErrors.TryRemove(entry.Key, out _);
+            }
+
+            if (!showToUser || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+                return;
+
+            _ = Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() =>
+                {
+                    try
+                    {
+                        _host?.Services.GetService<GlobalErrorPresenter>()?.Show(exception, source);
+                    }
+                    catch (Exception presenterException)
+                    {
+                        Log.Error(presenterException, "Could not present global error from {Source}", source);
+                    }
+                }));
+        }
+        catch
+        {
+            // Global exception handling must never throw another exception.
+        }
     }
 
     protected override async void OnExit(ExitEventArgs e)
