@@ -69,6 +69,77 @@ Update-FileText -Path $demoDataExperience -SuccessMessage 'Normalized escaped Ti
     $content.Replace('hh\:mm\:ss', 'hh\\:mm\\:ss')
 }
 
+$pagedGridBehavior = Join-Path $ProjectDirectory 'Behaviors\PagedDataGridBehavior.cs'
+Update-FileText -Path $pagedGridBehavior -SuccessMessage 'Guarded PagedDataGridBehavior against collection views without filtering support.' -Transform {
+    param($content)
+
+    $content = $content.Replace(
+@'
+                if (_view is not null && !ReferenceEquals(_view, nextView) && ReferenceEquals(_view.Filter, _pageFilter))
+                {
+                    _view.Filter = null;
+                }
+'@,
+@'
+                if (_view is not null && !ReferenceEquals(_view, nextView) && _view.CanFilter)
+                {
+                    try
+                    {
+                        if (ReferenceEquals(_view.Filter, _pageFilter))
+                            _view.Filter = null;
+                    }
+                    catch (NotSupportedException)
+                    {
+                        // Some WPF collection views report a Filter property but reject assignment.
+                    }
+                }
+'@)
+
+    $content = $content.Replace(
+@'
+                // The guard prevents CollectionView refresh notifications from re-entering Refresh().
+                if (!ReferenceEquals(_view.Filter, _pageFilter))
+                {
+                    _view.Filter = _pageFilter;
+                }
+                else
+                {
+                    _view.Refresh();
+                }
+
+                UpdateFooter(totalCount, pageItems.Count);
+'@,
+@'
+                // Some collection views (for example specific BindingList views) do not
+                // support predicate filtering. Keep the screen operational and skip the
+                // paging filter instead of throwing on the WPF Dispatcher.
+                if (_view.CanFilter)
+                {
+                    try
+                    {
+                        if (!ReferenceEquals(_view.Filter, _pageFilter))
+                            _view.Filter = _pageFilter;
+                        else
+                            _view.Refresh();
+                    }
+                    catch (NotSupportedException)
+                    {
+                        UpdateFooter(totalCount, totalCount);
+                        return;
+                    }
+                }
+                else
+                {
+                    UpdateFooter(totalCount, totalCount);
+                    return;
+                }
+
+                UpdateFooter(totalCount, pageItems.Count);
+'@)
+
+    $content
+}
+
 $appCodeBehind = Join-Path $ProjectDirectory 'App.xaml.cs'
 Update-FileText -Path $appCodeBehind -SuccessMessage 'Connected MainWindow to the active SQLite database path for demo data.' -Transform {
     param($content)
