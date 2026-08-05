@@ -10,18 +10,69 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$LogPath = Join-Path $ProjectPath "update-and-run.log"
+function Resolve-SafePath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $clean = $Path.Trim().Trim('"').Trim("'")
+    foreach ($invalid in [System.IO.Path]::GetInvalidPathChars()) {
+        $clean = $clean.Replace([string]$invalid, "")
+    }
+
+    if ([string]::IsNullOrWhiteSpace($clean)) {
+        throw "The project path is empty after path sanitization."
+    }
+
+    return [System.IO.Path]::GetFullPath($clean)
+}
+
+$ProjectPath = Resolve-SafePath -Path $ProjectPath
+$OutputRoot = Join-Path $ProjectPath "Output"
+$LatestOutput = Join-Path $OutputRoot "Latest"
+$HistoryRoot = Join-Path $OutputRoot "History"
+$RunStamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$HistoryOutput = Join-Path $HistoryRoot $RunStamp
+
+foreach ($directory in @($OutputRoot, $LatestOutput, $HistoryRoot, $HistoryOutput)) {
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+}
+
+$LogPath = Join-Path $LatestOutput "update-and-run.log"
+$HistoryLogPath = Join-Path $HistoryOutput "update-and-run.log"
+$SummaryPath = Join-Path $LatestOutput "Summary.txt"
+
+function Write-LogLine {
+    param([Parameter(Mandatory)][string]$Message)
+
+    Add-Content -LiteralPath $LogPath -Value $Message -Encoding UTF8
+    Add-Content -LiteralPath $HistoryLogPath -Value $Message -Encoding UTF8
+}
 
 function Write-Step([string]$Message) {
     $line = "[$(Get-Date -Format 'HH:mm:ss')] $Message"
     Write-Host "`n==> $Message" -ForegroundColor Cyan
-    Add-Content -Path $LogPath -Value $line -Encoding UTF8
+    Write-LogLine -Message $line
 }
 
 function Assert-Command([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "$Name is not installed or is not available in PATH."
     }
+}
+
+function Invoke-LoggedCommand {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [Parameter()][string[]]$Arguments = @()
+    )
+
+    $output = & $Command @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    $output | Tee-Object -FilePath $LogPath -Append | Out-Host
+    $output | Add-Content -LiteralPath $HistoryLogPath -Encoding UTF8
+    return $exitCode
 }
 
 function Stop-AppProcesses {
@@ -42,21 +93,50 @@ function Stop-AppProcesses {
     Start-Sleep -Milliseconds 700
 }
 
+function Complete-Run {
+    param(
+        [Parameter(Mandatory)][string]$Status,
+        [Parameter(Mandatory)][string]$Message
+    )
+
+    $summary = @(
+        "AI WordPress Manager",
+        "Status: $Status",
+        "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+        "Project: $ProjectPath",
+        "Configuration: $Configuration",
+        "Message: $Message",
+        "Latest output: $LatestOutput",
+        "History output: $HistoryOutput"
+    ) -join [Environment]::NewLine
+
+    Set-Content -LiteralPath $SummaryPath -Value $summary -Encoding UTF8
+    Copy-Item -LiteralPath $SummaryPath -Destination (Join-Path $HistoryOutput "Summary.txt") -Force
+
+    try {
+        Start-Process explorer.exe -ArgumentList ('"{0}"' -f $LatestOutput) | Out-Null
+    }
+    catch {
+        Write-Host "Output folder: $LatestOutput" -ForegroundColor Yellow
+    }
+}
+
 try {
-    Set-Content -Path $LogPath -Value "AI WordPress Manager update started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Encoding UTF8
+    $startMessage = "AI WordPress Manager update started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Set-Content -LiteralPath $LogPath -Value $startMessage -Encoding UTF8
+    Set-Content -LiteralPath $HistoryLogPath -Value $startMessage -Encoding UTF8
 
     Assert-Command "git"
     Assert-Command "dotnet"
 
-    $ProjectPath = [System.IO.Path]::GetFullPath($ProjectPath)
-    if (-not (Test-Path (Join-Path $ProjectPath ".git"))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectPath ".git"))) {
         throw "Git repository was not found at: $ProjectPath"
     }
-    if (-not (Test-Path (Join-Path $ProjectPath "AIWordPressManager.sln"))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectPath "AIWordPressManager.sln"))) {
         throw "AIWordPressManager.sln was not found at: $ProjectPath"
     }
 
-    Set-Location $ProjectPath
+    Set-Location -LiteralPath $ProjectPath
     Stop-AppProcesses
 
     Write-Step "Checking local repository status"
@@ -69,54 +149,67 @@ try {
     }
 
     Write-Step "Switching to main branch"
-    & git checkout main 2>&1 | Tee-Object -FilePath $LogPath -Append | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "git checkout main failed." }
+    if ((Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main")) -ne 0) {
+        throw "git checkout main failed."
+    }
 
     Write-Step "Fetching latest commits"
-    & git fetch origin 2>&1 | Tee-Object -FilePath $LogPath -Append | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "git fetch failed." }
+    if ((Invoke-LoggedCommand -Command "git" -Arguments @("fetch", "origin")) -ne 0) {
+        throw "git fetch failed."
+    }
 
     Write-Step "Updating main branch"
-    & git pull --ff-only origin main 2>&1 | Tee-Object -FilePath $LogPath -Append | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "git pull failed. Resolve branch divergence or local changes first." }
+    if ((Invoke-LoggedCommand -Command "git" -Arguments @("pull", "--ff-only", "origin", "main")) -ne 0) {
+        throw "git pull failed. Resolve branch divergence or local changes first."
+    }
 
     Write-Step "Stopping .NET build servers"
-    & dotnet build-server shutdown 2>&1 | Tee-Object -FilePath $LogPath -Append | Out-Host
+    [void](Invoke-LoggedCommand -Command "dotnet" -Arguments @("build-server", "shutdown"))
 
     if (-not $SkipClean) {
         Write-Step "Removing bin and obj folders"
-        Get-ChildItem -Path $ProjectPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $ProjectPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -in @("bin", "obj") } |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Write-Step "Restoring NuGet packages"
-    & dotnet restore ".\AIWordPressManager.sln" --force 2>&1 |
-        Tee-Object -FilePath $LogPath -Append | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed. See $LogPath" }
+    if ((Invoke-LoggedCommand -Command "dotnet" -Arguments @("restore", ".\AIWordPressManager.sln", "--force")) -ne 0) {
+        throw "dotnet restore failed. See $LogPath"
+    }
 
     Write-Step "Building $Configuration configuration"
-    & dotnet build ".\AIWordPressManager.sln" -c $Configuration --no-restore 2>&1 |
-        Tee-Object -FilePath $LogPath -Append | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed. See $LogPath" }
+    if ((Invoke-LoggedCommand -Command "dotnet" -Arguments @("build", ".\AIWordPressManager.sln", "-c", $Configuration, "--no-restore")) -ne 0) {
+        throw "dotnet build failed. See $LogPath"
+    }
 
     $commit = (& git rev-parse --short HEAD).Trim()
     Write-Step "Build completed successfully at commit $commit"
 
     if (-not $NoRun) {
         Write-Step "Starting AI WordPress Manager"
-        & dotnet run --no-build -c $Configuration --project ".\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj" 2>&1 |
-            Tee-Object -FilePath $LogPath -Append | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "Application exited with code $LASTEXITCODE. See $LogPath" }
+        $runCode = Invoke-LoggedCommand -Command "dotnet" -Arguments @(
+            "run", "--no-build", "-c", $Configuration,
+            "--project", ".\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj"
+        )
+        if ($runCode -ne 0) {
+            throw "Application exited with code $runCode. See $LogPath"
+        }
     }
+
+    Complete-Run -Status "SUCCESS" -Message "Build and update completed successfully at commit $commit."
 }
 catch {
     $message = "[ERROR] $($_.Exception.Message)"
     Write-Host "`n$message" -ForegroundColor Red
-    Add-Content -Path $LogPath -Value $message -Encoding UTF8
 
-    if (Test-Path $LogPath) {
-        Write-Host "Log: $LogPath" -ForegroundColor Yellow
+    try {
+        Write-LogLine -Message $message
     }
+    catch {
+        Write-Host "Could not write to the log file. Output folder: $LatestOutput" -ForegroundColor Yellow
+    }
+
+    Complete-Run -Status "FAILED" -Message $message
     exit 1
 }
