@@ -138,11 +138,32 @@ function Prepare-Repository {
     $gitFolder = Join-Path $script:projectRoot ".git"
     if (Test-Path -LiteralPath $gitFolder -PathType Container) {
         Set-Location -LiteralPath $script:projectRoot
-        Write-Step "Updating existing repository in the current folder"
-        Invoke-LoggedCommand -Command "git" -Arguments @("fetch", "origin", "--prune") | Out-Null
-        Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main") | Out-Null
+        Write-Step "Replacing local files with the exact GitHub main branch"
+
+        Invoke-LoggedCommand -Command "git" -Arguments @("merge", "--abort") -IgnoreExitCode | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("rebase", "--abort") -IgnoreExitCode | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("am", "--abort") -IgnoreExitCode | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("cherry-pick", "--abort") -IgnoreExitCode | Out-Null
+
+        $remoteExists = (& git remote) -contains "origin"
+        if ($remoteExists) {
+            Invoke-LoggedCommand -Command "git" -Arguments @("remote", "set-url", "origin", $RepositoryUrl) | Out-Null
+        }
+        else {
+            Invoke-LoggedCommand -Command "git" -Arguments @("remote", "add", "origin", $RepositoryUrl) | Out-Null
+        }
+
+        Invoke-LoggedCommand -Command "git" -Arguments @("fetch", "origin", "main", "--prune", "--force") | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "-B", "main", "origin/main") | Out-Null
         Invoke-LoggedCommand -Command "git" -Arguments @("reset", "--hard", "origin/main") | Out-Null
-        Invoke-LoggedCommand -Command "git" -Arguments @("clean", "-fd") | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("clean", "-xffd") | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("submodule", "sync", "--recursive") -IgnoreExitCode | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("submodule", "update", "--init", "--recursive", "--force") -IgnoreExitCode | Out-Null
+
+        $status = (& git status --porcelain)
+        if ($status) {
+            throw "The repository still contains local changes after the forced reset. Check file permissions or antivirus locks."
+        }
         return
     }
 
@@ -156,7 +177,7 @@ function Prepare-Repository {
     }
 
     Write-Step "Cloning repository into the current folder"
-    Invoke-LoggedCommand -Command "git" -Arguments @("clone", $RepositoryUrl, ".") | Out-Null
+    Invoke-LoggedCommand -Command "git" -Arguments @("clone", "--branch", "main", "--single-branch", $RepositoryUrl, ".") | Out-Null
     Set-Location -LiteralPath $script:projectRoot
 }
 
@@ -226,14 +247,14 @@ try {
     Write-Host "Working folder: $script:projectRoot" -ForegroundColor Yellow
 
     Ensure-Prerequisites
+    Stop-RunningApp
     Prepare-Repository
     Initialize-Output -Root $script:projectRoot
-    Stop-RunningApp
     Clean-Restore-Build
     Run-App
 
     $commit = (& git -C $script:projectRoot rev-parse --short HEAD).Trim()
-    Complete-Run -Status "SUCCESS" -Message "Update/clone, build, and run completed at commit $commit."
+    Complete-Run -Status "SUCCESS" -Message "Forced GitHub sync, build, and run completed at commit $commit."
 
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Green
