@@ -123,9 +123,9 @@ internal static class GlobalPopupCloseExperience
             Margin = new Thickness(6),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
-            Panel.ZIndex = 10000,
             Focusable = false
         };
+        Panel.SetZIndex(close, 10000);
         close.Click += (_, _) => CloseSurface(surface, state);
 
         switch (surface)
