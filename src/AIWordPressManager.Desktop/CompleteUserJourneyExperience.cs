@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
-using System.Windows.Threading;
 
 namespace AIWordPressManager.Desktop.ViewModels
 {
@@ -158,8 +158,7 @@ namespace AIWordPressManager.Desktop
 {
     internal static class CompleteUserJourneyBootstrap
     {
-        private static readonly DispatcherTimer RefreshTimer = new() { Interval = TimeSpan.FromSeconds(3) };
-        private static WeakReference<MainWindow>? _windowReference;
+        private static readonly ConditionalWeakTable<MainWindow, State> Attached = new();
 
         [ModuleInitializer]
         internal static void Initialize()
@@ -174,41 +173,22 @@ namespace AIWordPressManager.Desktop
         private static void OnWindowLoaded(object sender, RoutedEventArgs e)
         {
             if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
-            _windowReference = new WeakReference<MainWindow>(window);
+            if (Attached.TryGetValue(window, out _)) return;
+            if (window.DataContext is not ViewModels.MainWindowViewModel main) return;
 
-            window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
-            {
-                InstallJourneyCenter(window);
-                Refresh(window);
-            }));
-
-            RefreshTimer.Stop();
-            RefreshTimer.Tick -= RefreshTimerOnTick;
-            RefreshTimer.Tick += RefreshTimerOnTick;
-            RefreshTimer.Start();
+            var state = new State(window, main);
+            Attached.Add(window, state);
+            state.Attach();
         }
 
-        private static void RefreshTimerOnTick(object? sender, EventArgs e)
-        {
-            if (_windowReference is null || !_windowReference.TryGetTarget(out var window) || !window.IsLoaded)
-            {
-                RefreshTimer.Stop();
-                return;
-            }
-            Refresh(window);
-        }
-
-        private static void Refresh(MainWindow window)
-        {
-            if (window.DataContext is ViewModels.MainWindowViewModel viewModel)
-                viewModel.RefreshCompleteUserJourney();
-        }
-
-        private static void InstallJourneyCenter(MainWindow window)
+        private static Border? InstallJourneyCenter(MainWindow window)
         {
             var marker = FindTextBlock(window, "Guided optimization workflow");
-            if (marker?.Parent is not StackPanel headerPanel || headerPanel.Children.OfType<Border>().Any(x => Equals(x.Tag, "CompleteJourneyCenter")))
-                return;
+            if (marker?.Parent is not StackPanel headerPanel) return null;
+
+            var existing = headerPanel.Children.OfType<Border>()
+                .FirstOrDefault(x => Equals(x.Tag, "CompleteJourneyCenter"));
+            if (existing is not null) return existing;
 
             var center = new Border
             {
@@ -287,6 +267,7 @@ namespace AIWordPressManager.Desktop
 
             center.Child = root;
             headerPanel.Children.Add(center);
+            return center;
         }
 
         private static FrameworkElementFactory CreateJourneyTextFactory()
@@ -332,6 +313,84 @@ namespace AIWordPressManager.Desktop
                 if (nested is not null) return nested;
             }
             return null;
+        }
+
+        private sealed class State(MainWindow window, ViewModels.MainWindowViewModel main)
+        {
+            private Border? _center;
+
+            public void Attach()
+            {
+                window.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _center = InstallJourneyCenter(window);
+                    ApplyPageState();
+                }));
+
+                main.PropertyChanged += OnMainPropertyChanged;
+                main.Sites.SelectedSiteChanged += OnSelectedSiteChanged;
+                window.Closed += OnClosed;
+            }
+
+            private void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
+            {
+                if (e.PropertyName == nameof(ViewModels.MainWindowViewModel.CurrentPage))
+                {
+                    ApplyPageState();
+                    return;
+                }
+
+                if (IsJourneyInput(e.PropertyName) && IsDashboardVisible())
+                    main.RefreshCompleteUserJourney();
+            }
+
+            private void OnSelectedSiteChanged(object? sender, EventArgs e)
+            {
+                if (IsDashboardVisible())
+                    main.RefreshCompleteUserJourney();
+            }
+
+            private void ApplyPageState()
+            {
+                var visible = IsDashboardVisible();
+                if (_center is not null)
+                {
+                    _center.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                    _center.IsHitTestVisible = visible;
+                }
+
+                if (visible)
+                    main.RefreshCompleteUserJourney();
+            }
+
+            private bool IsDashboardVisible() =>
+                window.IsLoaded &&
+                main.CurrentPage.Equals("Dashboard", StringComparison.OrdinalIgnoreCase);
+
+            private static bool IsJourneyInput(string? propertyName) => propertyName is
+                nameof(ViewModels.MainWindowViewModel.DashboardLastSiteSync) or
+                nameof(ViewModels.MainWindowViewModel.DashboardSeoScoreState) or
+                nameof(ViewModels.MainWindowViewModel.DashboardAiSuggestions) or
+                nameof(ViewModels.MainWindowViewModel.JourneyPreviewState) or
+                nameof(ViewModels.MainWindowViewModel.JourneyApprovalState) or
+                nameof(ViewModels.MainWindowViewModel.JourneyExecuteState) or
+                nameof(ViewModels.MainWindowViewModel.JourneyVerifyState) or
+                nameof(ViewModels.MainWindowViewModel.JourneyDoneState) or
+                nameof(ViewModels.MainWindowViewModel.DashboardJourneyProgress) or
+                nameof(ViewModels.MainWindowViewModel.HasScheduledSyncPause);
+
+            private void OnClosed(object? sender, EventArgs e)
+            {
+                main.PropertyChanged -= OnMainPropertyChanged;
+                main.Sites.SelectedSiteChanged -= OnSelectedSiteChanged;
+                window.Closed -= OnClosed;
+
+                if (_center?.Parent is Panel parent)
+                    parent.Children.Remove(_center);
+                if (_center is not null)
+                    _center.Child = null;
+                _center = null;
+            }
         }
     }
 }
