@@ -102,9 +102,9 @@ internal static class UnifiedDemoRibbonAndPopupExperience
                 return;
 
             await LiveWordPressDemoMaterializer.MaterializeAsync(databasePath, siteId, siteName, siteUrl);
-            await RefreshVisibleViewModelsAsync(Application.Current.MainWindow);
+            await RefreshVisibleViewModelsAsync(global::System.Windows.Application.Current.MainWindow);
 
-            MessageBox.Show(Application.Current.MainWindow,
+            MessageBox.Show(global::System.Windows.Application.Current.MainWindow,
                 "Demo data was saved into the live WordPress snapshot tables and all visible screens were refreshed.\n\n" +
                 "Posts/Pages: 200\nCategories: 100\nTags: 100\nMedia: 100",
                 "Demo Data Applied",
@@ -113,7 +113,7 @@ internal static class UnifiedDemoRibbonAndPopupExperience
         }
         catch (Exception ex)
         {
-            MessageBox.Show(Application.Current.MainWindow,
+            MessageBox.Show(global::System.Windows.Application.Current.MainWindow,
                 "Demo rows were created, but applying them to the live site snapshot failed.\n\n" + ex.Message,
                 "Demo Data Integration",
                 MessageBoxButton.OK,
