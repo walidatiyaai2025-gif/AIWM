@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
@@ -50,10 +51,11 @@ internal static class DockedSidebarContextExperience
     private sealed class State(MainWindow window, MainWindowViewModel main)
     {
         private readonly Dictionary<string, Button> _buttons = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, TextBlock> _badges = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, BadgeControls> _badges = new(StringComparer.OrdinalIgnoreCase);
         private Grid? _host;
         private Border? _sidebar;
         private string? _selectedLabel;
+        private bool _refreshQueued;
 
         public void Attach()
         {
@@ -86,19 +88,29 @@ internal static class DockedSidebarContextExperience
                     _badges[label] = badge;
             }
 
-            RefreshBadges();
+            QueueRefresh();
             SelectForCurrentPage();
         }
 
-        private static TextBlock? EnsureBadge(Button button)
+        private static BadgeControls? EnsureBadge(Button button)
         {
             if (button.Content is not StackPanel panel) return null;
 
-            var existing = panel.Children.OfType<TextBlock>()
+            var existing = panel.Children.OfType<Border>()
                 .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "SidebarContextBadge", StringComparison.Ordinal));
-            if (existing is not null) return existing;
+            if (existing?.Child is TextBlock existingText)
+                return new BadgeControls(existing, existingText);
 
-            var badge = new TextBlock
+            var text = new TextBlock
+            {
+                TextAlignment = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 9,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.White
+            };
+
+            var badge = new Border
             {
                 Tag = "SidebarContextBadge",
                 MinWidth = 20,
@@ -107,15 +119,13 @@ internal static class DockedSidebarContextExperience
                 Padding = new Thickness(4, 0, 4, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                TextAlignment = TextAlignment.Center,
-                FontSize = 9,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
+                CornerRadius = new CornerRadius(9),
                 Background = ResourceBrush("PrimaryBrush", Brushes.Teal),
-                Visibility = Visibility.Collapsed
+                Visibility = Visibility.Collapsed,
+                Child = text
             };
             panel.Children.Add(badge);
-            return badge;
+            return new BadgeControls(badge, text);
         }
 
         private void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -130,11 +140,22 @@ internal static class DockedSidebarContextExperience
                 nameof(MainWindowViewModel.DashboardRunningJobs) or
                 nameof(MainWindowViewModel.DashboardFailedJobs) or
                 nameof(MainWindowViewModel.IsOperationRunning))
-                RefreshBadges();
+                QueueRefresh();
         }
 
-        private void OnRelatedPropertyChanged(object? sender, PropertyChangedEventArgs e) => RefreshBadges();
-        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshBadges();
+        private void OnRelatedPropertyChanged(object? sender, PropertyChangedEventArgs e) => QueueRefresh();
+        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueRefresh();
+
+        private void QueueRefresh()
+        {
+            if (_refreshQueued || window.Dispatcher.HasShutdownStarted) return;
+            _refreshQueued = true;
+            window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                _refreshQueued = false;
+                RefreshBadges();
+            }));
+        }
 
         private void RefreshBadges()
         {
@@ -159,8 +180,8 @@ internal static class DockedSidebarContextExperience
         private void SetBadge(string label, string text, bool visible)
         {
             if (!_badges.TryGetValue(label, out var badge)) return;
-            badge.Text = text;
-            badge.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            badge.Text.Text = text;
+            badge.Container.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void SelectForCurrentPage()
@@ -228,6 +249,8 @@ internal static class DockedSidebarContextExperience
             _host = null;
         }
     }
+
+    private sealed record BadgeControls(Border Container, TextBlock Text);
 
     private static string Compact(int value) => value > 99 ? "99+" : value.ToString();
 
