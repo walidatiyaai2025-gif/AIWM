@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -28,31 +29,26 @@ internal static class ExecutionTimelineExperience
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
 
-        var state = new State(main, BuildPage(main));
-        Attached.Add(window, state);
-        Grid.SetRow(state.Page, 3);
-        Panel.SetZIndex(state.Page, 30);
-        root.Children.Add(state.Page);
-
-        main.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName == nameof(MainWindowViewModel.CurrentPage))
-                Apply(state);
-        };
-
+        var page = BuildPage(main);
         var timer = new DispatcherTimer(DispatcherPriority.ContextIdle, window.Dispatcher)
         {
             Interval = TimeSpan.FromSeconds(3)
         };
-        timer.Tick += async (_, _) =>
-        {
-            Apply(state);
-            if (state.Page.Visibility == Visibility.Visible && !main.Jobs.IsBusy)
-                await main.Jobs.LoadAsync();
-        };
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
-        Apply(state);
+        var state = new State(window, main, page, timer);
+        Attached.Add(window, state);
+
+        Grid.SetRow(page, 3);
+        Panel.SetZIndex(page, 30);
+        root.Children.Add(page);
+
+        timer.Tick += state.OnTimerTick;
+        main.PropertyChanged += state.OnMainPropertyChanged;
+        window.Activated += state.OnWindowActivated;
+        window.Deactivated += state.OnWindowDeactivated;
+        window.StateChanged += state.OnWindowStateChanged;
+        window.Closed += state.OnWindowClosed;
+
+        state.ApplyLifecycle();
     }
 
     private static Grid BuildPage(MainWindowViewModel main)
@@ -234,13 +230,6 @@ internal static class ExecutionTimelineExperience
         return page;
     }
 
-    private static void Apply(State state)
-    {
-        var visible = state.Main.CurrentPage.Equals("Activity Timeline", StringComparison.OrdinalIgnoreCase);
-        state.Page.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        state.Page.IsHitTestVisible = visible;
-    }
-
     private static Border SummaryCard(string label, string path, string brushKey, object source)
     {
         var card = Card();
@@ -311,5 +300,76 @@ internal static class ExecutionTimelineExperience
     private static Brush Brush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
-    private sealed record State(MainWindowViewModel Main, Grid Page);
+    private sealed class State(MainWindow window, MainWindowViewModel main, Grid page, DispatcherTimer timer)
+    {
+        private bool _windowActive = window.IsActive;
+        private bool _refreshBusy;
+
+        public void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.CurrentPage))
+                ApplyLifecycle();
+        }
+
+        public void OnWindowActivated(object? sender, EventArgs e)
+        {
+            _windowActive = true;
+            ApplyLifecycle();
+        }
+
+        public void OnWindowDeactivated(object? sender, EventArgs e)
+        {
+            _windowActive = false;
+            timer.Stop();
+        }
+
+        public void OnWindowStateChanged(object? sender, EventArgs e) => ApplyLifecycle();
+
+        public async void OnTimerTick(object? sender, EventArgs e)
+        {
+            if (_refreshBusy || !ShouldRun() || main.Jobs.IsBusy) return;
+            _refreshBusy = true;
+            try
+            {
+                await main.Jobs.LoadAsync();
+            }
+            finally
+            {
+                _refreshBusy = false;
+            }
+        }
+
+        public void ApplyLifecycle()
+        {
+            var visible = main.CurrentPage.Equals("Activity Timeline", StringComparison.OrdinalIgnoreCase);
+            page.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            page.IsHitTestVisible = visible;
+
+            if (ShouldRun())
+            {
+                if (!timer.IsEnabled)
+                    timer.Start();
+            }
+            else if (timer.IsEnabled)
+            {
+                timer.Stop();
+            }
+        }
+
+        private bool ShouldRun() =>
+            _windowActive &&
+            window.WindowState != WindowState.Minimized &&
+            main.CurrentPage.Equals("Activity Timeline", StringComparison.OrdinalIgnoreCase);
+
+        public void OnWindowClosed(object? sender, EventArgs e)
+        {
+            timer.Stop();
+            timer.Tick -= OnTimerTick;
+            main.PropertyChanged -= OnMainPropertyChanged;
+            window.Activated -= OnWindowActivated;
+            window.Deactivated -= OnWindowDeactivated;
+            window.StateChanged -= OnWindowStateChanged;
+            window.Closed -= OnWindowClosed;
+        }
+    }
 }
