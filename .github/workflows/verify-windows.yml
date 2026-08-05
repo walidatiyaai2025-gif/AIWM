@@ -1,0 +1,62 @@
+name: Verify Windows Solution
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Restore, build and test
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      NUGET_XMLDOC_MODE: skip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/packages.lock.json
+            **/Directory.Packages.props
+
+      - name: Restore solution
+        shell: pwsh
+        run: dotnet restore .\AIWordPressManager.sln --disable-parallel
+
+      - name: Build solution
+        shell: pwsh
+        run: dotnet build .\AIWordPressManager.sln --configuration Release --no-restore --maxcpucount:1 /p:ContinuousIntegrationBuild=true
+
+      - name: Run tests
+        shell: pwsh
+        run: dotnet test .\AIWordPressManager.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory .\TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-results-${{ github.run_number }}
+          path: TestResults
+          if-no-files-found: ignore
+          retention-days: 7
