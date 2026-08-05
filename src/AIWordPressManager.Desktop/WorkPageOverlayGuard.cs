@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,8 +9,9 @@ using AIWordPressManager.Desktop.ViewModels;
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
-/// Enforces the work-page layout contract:
-/// page content, one docked action bar and no persistent overlay cards.
+/// Enforces the work-page layout contract without polling the visual tree.
+/// Page changes trigger one deferred surface cleanup, while execution counters
+/// update only when their existing ViewModel properties change.
 /// </summary>
 internal static class WorkPageOverlayGuard
 {
@@ -44,23 +46,40 @@ internal static class WorkPageOverlayGuard
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
 
-        var state = new State(root, main);
+        var state = new State(window, root, main);
         Attached.Add(window, state);
 
-        var timer = new DispatcherTimer(DispatcherPriority.Send, window.Dispatcher)
-        {
-            Interval = TimeSpan.FromMilliseconds(140)
-        };
-        timer.Tick += (_, _) => Apply(state);
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
-        Apply(state);
+        main.PropertyChanged += state.OnMainPropertyChanged;
+        main.ExecutionCenter.PropertyChanged += state.OnExecutionCenterPropertyChanged;
+        window.ContentRendered += state.OnContentRendered;
+        window.Closed += state.OnClosed;
+
+        ScheduleApply(state, includeSurfaceScan: true);
     }
 
-    private static void Apply(State state)
+    private static void ScheduleApply(State state, bool includeSurfaceScan)
     {
-        SuppressBlockedSurfaces(state.Root);
-        EnsureCompactExecutionStatus(state);
+        if (state.IsDisposed) return;
+
+        if (includeSurfaceScan)
+            state.SurfaceScanPending = true;
+
+        if (state.ApplyPending) return;
+        state.ApplyPending = true;
+
+        _ = state.Window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            state.ApplyPending = false;
+            if (state.IsDisposed || !state.Window.IsLoaded) return;
+
+            if (state.SurfaceScanPending)
+            {
+                state.SurfaceScanPending = false;
+                SuppressBlockedSurfaces(state.Root);
+            }
+
+            EnsureCompactExecutionStatus(state);
+        }));
     }
 
     private static void SuppressBlockedSurfaces(DependencyObject root)
@@ -102,28 +121,40 @@ internal static class WorkPageOverlayGuard
 
     private static void EnsureCompactExecutionStatus(State state)
     {
-        var actionBar = FindByTag<Border>(state.Root, "PrimaryWorkActionBar");
+        var actionBar = state.ActionBar;
+        if (actionBar is null || !actionBar.IsLoaded)
+        {
+            actionBar = FindByTag<Border>(state.Root, "PrimaryWorkActionBar");
+            state.ActionBar = actionBar;
+        }
+
         if (actionBar?.Child is not Grid grid) return;
 
-        var status = FindByTag<Button>(actionBar, "CompactExecutionStatus");
-        if (status is null)
+        var status = state.ExecutionStatusButton;
+        if (status is null || !status.IsLoaded)
         {
-            status = new Button
+            status = FindByTag<Button>(actionBar, "CompactExecutionStatus");
+            if (status is null)
             {
-                Tag = "CompactExecutionStatus",
-                Height = 24,
-                MinWidth = 126,
-                Margin = new Thickness(8, 0, 8, 0),
-                Padding = new Thickness(9, 2, 9, 2),
-                VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = "Open Execution Center",
-                HorizontalAlignment = HorizontalAlignment.Right
-            };
-            status.Click += async (_, _) =>
-                await state.Main.NavigateCommand.ExecuteAsync("Execution Center");
+                status = new Button
+                {
+                    Tag = "CompactExecutionStatus",
+                    Height = 24,
+                    MinWidth = 126,
+                    Margin = new Thickness(8, 0, 8, 0),
+                    Padding = new Thickness(9, 2, 9, 2),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "Open Execution Center",
+                    HorizontalAlignment = HorizontalAlignment.Right
+                };
+                status.Click += async (_, _) =>
+                    await state.Main.NavigateCommand.ExecuteAsync("Execution Center");
 
-            Grid.SetColumn(status, 1);
-            grid.Children.Add(status);
+                Grid.SetColumn(status, 1);
+                grid.Children.Add(status);
+            }
+
+            state.ExecutionStatusButton = status;
         }
 
         var ready = state.Main.ExecutionCenter.ReadyCount;
@@ -185,9 +216,51 @@ internal static class WorkPageOverlayGuard
         }
     }
 
-    private sealed class State(Grid root, MainWindowViewModel main)
+    private sealed class State
     {
-        public Grid Root { get; } = root;
-        public MainWindowViewModel Main { get; } = main;
+        public State(MainWindow window, Grid root, MainWindowViewModel main)
+        {
+            Window = window;
+            Root = root;
+            Main = main;
+        }
+
+        public MainWindow Window { get; }
+        public Grid Root { get; }
+        public MainWindowViewModel Main { get; }
+        public Border? ActionBar { get; set; }
+        public Button? ExecutionStatusButton { get; set; }
+        public bool ApplyPending { get; set; }
+        public bool SurfaceScanPending { get; set; }
+        public bool IsDisposed { get; private set; }
+
+        public void OnContentRendered(object? sender, EventArgs e) =>
+            ScheduleApply(this, includeSurfaceScan: true);
+
+        public void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(MainWindowViewModel.CurrentPage))
+            {
+                ActionBar = null;
+                ExecutionStatusButton = null;
+                ScheduleApply(this, includeSurfaceScan: true);
+            }
+        }
+
+        public void OnExecutionCenterPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is "ReadyCount" or "FailedCount")
+                ScheduleApply(this, includeSurfaceScan: false);
+        }
+
+        public void OnClosed(object? sender, EventArgs e)
+        {
+            if (IsDisposed) return;
+            IsDisposed = true;
+            Main.PropertyChanged -= OnMainPropertyChanged;
+            Main.ExecutionCenter.PropertyChanged -= OnExecutionCenterPropertyChanged;
+            Window.ContentRendered -= OnContentRendered;
+            Window.Closed -= OnClosed;
+        }
     }
 }
