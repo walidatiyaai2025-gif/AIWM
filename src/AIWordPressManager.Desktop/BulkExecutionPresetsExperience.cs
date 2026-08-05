@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -28,7 +29,7 @@ internal static class BulkExecutionPresetsExperience
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
 
-        var state = new State(main);
+        var state = new State(main, window);
         Attached.Add(window, state);
 
         var timer = new DispatcherTimer(DispatcherPriority.ContextIdle, window.Dispatcher)
@@ -56,9 +57,7 @@ internal static class BulkExecutionPresetsExperience
         var visible = state.Main.CurrentPage.Equals("Execution Center", StringComparison.OrdinalIgnoreCase);
         state.Panel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         state.Panel.IsHitTestVisible = visible;
-        if (!visible) return;
-
-        UpdateSummary(state);
+        if (visible) UpdateSummary(state);
     }
 
     private static Border BuildPanel(State state)
@@ -90,20 +89,26 @@ internal static class BulkExecutionPresetsExperience
 
         var presets = new ComboBox
         {
-            Width = 145,
+            Width = 132,
             Height = 25,
             Margin = new Thickness(0, 0, 6, 0),
             ItemsSource = Enum.GetValues<BulkPreset>().Select(ToLabel).ToArray(),
             SelectedIndex = 0,
-            ToolTip = "Choose which approved or safely approvable actions should be selected."
+            ToolTip = "Choose a safe bulk execution category."
         };
         presets.SelectionChanged += (_, _) =>
         {
             state.Preset = (BulkPreset)Math.Max(0, presets.SelectedIndex);
+            state.PreviewAccepted = false;
             UpdateSummary(state);
         };
         panel.Children.Add(presets);
 
+        panel.Children.Add(Button("Preview", async () =>
+        {
+            await EnsureLoadedAsync(state);
+            state.PreviewAccepted = ShowPreview(state, requireConfirmation: false);
+        }));
         panel.Children.Add(Button("Select", async () =>
         {
             await EnsureLoadedAsync(state);
@@ -112,6 +117,8 @@ internal static class BulkExecutionPresetsExperience
         panel.Children.Add(Button("Execute preset", async () =>
         {
             await EnsureLoadedAsync(state);
+            if (!ShowPreview(state, requireConfirmation: true)) return;
+
             SelectPreset(state);
             if (state.Main.ExecutionCenter.SelectedItems.Count == 0) return;
             if (state.Main.ExecutionCenter.ExecuteSelectedCommand.CanExecute(null))
@@ -120,6 +127,7 @@ internal static class BulkExecutionPresetsExperience
         panel.Children.Add(Button("Clear", () =>
         {
             state.Main.ExecutionCenter.ClearSelectionCommand.Execute(null);
+            state.PreviewAccepted = false;
             UpdateSummary(state);
             return Task.CompletedTask;
         }));
@@ -138,20 +146,86 @@ internal static class BulkExecutionPresetsExperience
     {
         var center = state.Main.ExecutionCenter;
         center.SelectedItems.Clear();
-
         foreach (var item in center.Items.Where(x => Matches(x, state.Preset)))
             center.SelectedItems.Add(item);
-
         center.SelectedItem = center.SelectedItems.FirstOrDefault();
         UpdateSummary(state);
     }
 
-    private static bool Matches(ApprovedChangeExecutionItem item, BulkPreset preset)
+    private static bool ShowPreview(State state, bool requireConfirmation)
+    {
+        var center = state.Main.ExecutionCenter;
+        var all = center.Items.Where(x => MatchesCategory(x, state.Preset)).ToArray();
+        var eligible = all.Where(IsSafeEligible).ToArray();
+        var ready = eligible.Count(x => x.CanExecute);
+        var needsApproval = eligible.Count(x => !x.CanExecute && x.CanApprove);
+        var highRisk = all.Count(x => x.RiskLevel.Equals("High", StringComparison.OrdinalIgnoreCase));
+        var staging = all.Count(x => x.RequiresStaging);
+        var unsupported = all.Count(x => !x.CanExecute && !x.CanApprove);
+        var executed = all.Count(x => x.ExecutionStatus.Equals("Executed", StringComparison.OrdinalIgnoreCase));
+
+        var types = eligible
+            .GroupBy(x => string.IsNullOrWhiteSpace(x.ChangeType) ? "Unknown" : x.ChangeType)
+            .OrderByDescending(x => x.Count())
+            .Take(8)
+            .Select(x => $"• {x.Key}: {x.Count()}");
+
+        var message = new StringBuilder()
+            .AppendLine($"Preset: {ToLabel(state.Preset)}")
+            .AppendLine($"Safe eligible: {eligible.Length}")
+            .AppendLine($"Ready now: {ready}")
+            .AppendLine($"Needs approval first: {needsApproval}")
+            .AppendLine()
+            .AppendLine("Excluded by safety gate:")
+            .AppendLine($"• High risk: {highRisk}")
+            .AppendLine($"• Requires staging: {staging}")
+            .AppendLine($"• Unsupported/manual: {unsupported}")
+            .AppendLine($"• Already executed: {executed}")
+            .AppendLine()
+            .AppendLine("Top included change types:")
+            .AppendLine(types.Any() ? string.Join(Environment.NewLine, types) : "• None")
+            .AppendLine()
+            .AppendLine("Execution uses backup, WordPress update, read-back verification and job history.")
+            .ToString();
+
+        if (eligible.Length == 0)
+        {
+            MessageBox.Show(state.Window, message, "Preset preview — nothing safe to execute", MessageBoxButton.OK, MessageBoxImage.Information);
+            state.PreviewAccepted = false;
+            return false;
+        }
+
+        if (!requireConfirmation)
+        {
+            MessageBox.Show(state.Window, message, "Execution preset preview", MessageBoxButton.OK, MessageBoxImage.Information);
+            state.PreviewAccepted = true;
+            return true;
+        }
+
+        var result = MessageBox.Show(
+            state.Window,
+            message + Environment.NewLine + "Continue with this safe batch?",
+            "Confirm bulk execution",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+
+        state.PreviewAccepted = result == MessageBoxResult.Yes;
+        return state.PreviewAccepted;
+    }
+
+    private static bool Matches(ApprovedChangeExecutionItem item, BulkPreset preset) =>
+        MatchesCategory(item, preset) && IsSafeEligible(item);
+
+    private static bool IsSafeEligible(ApprovedChangeExecutionItem item)
     {
         if (item.ExecutionStatus.Equals("Executed", StringComparison.OrdinalIgnoreCase)) return false;
         if (item.RequiresStaging || item.RiskLevel.Equals("High", StringComparison.OrdinalIgnoreCase)) return false;
-        if (!item.CanExecute && !item.CanApprove) return false;
+        return item.CanExecute || item.CanApprove;
+    }
 
+    private static bool MatchesCategory(ApprovedChangeExecutionItem item, BulkPreset preset)
+    {
         var type = item.ChangeType ?? string.Empty;
         return preset switch
         {
@@ -169,7 +243,8 @@ internal static class BulkExecutionPresetsExperience
         if (state.Summary is null) return;
         var center = state.Main.ExecutionCenter;
         var eligible = center.Items.Count(x => Matches(x, state.Preset));
-        state.Summary.Text = $"{ToLabel(state.Preset)}: {eligible} eligible · Selected: {center.SelectedItems.Count}";
+        var excluded = center.Items.Count(x => MatchesCategory(x, state.Preset) && !IsSafeEligible(x));
+        state.Summary.Text = $"{ToLabel(state.Preset)}: {eligible} safe · {excluded} excluded · Selected: {center.SelectedItems.Count}";
     }
 
     private static bool ContainsAny(string value, params string[] tokens) =>
@@ -217,12 +292,14 @@ internal static class BulkExecutionPresetsExperience
     private static Brush Brush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
-    private sealed class State(MainWindowViewModel main)
+    private sealed class State(MainWindowViewModel main, MainWindow window)
     {
         public MainWindowViewModel Main { get; } = main;
+        public MainWindow Window { get; } = window;
         public Border? Panel { get; set; }
         public TextBlock? Summary { get; set; }
         public BulkPreset Preset { get; set; } = BulkPreset.LowRisk;
+        public bool PreviewAccepted { get; set; }
     }
 
     private enum BulkPreset
