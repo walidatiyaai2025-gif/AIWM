@@ -1,9 +1,9 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
 using AIWordPressManager.Application.Changes;
 using AIWordPressManager.Desktop.ViewModels;
 
@@ -29,16 +29,11 @@ internal static class BulkExecutionPresetsExperience
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
 
-        var state = new State(main, window);
+        var state = new State(main, window, root);
         Attached.Add(window, state);
 
-        var timer = new DispatcherTimer(DispatcherPriority.ContextIdle, window.Dispatcher)
-        {
-            Interval = TimeSpan.FromMilliseconds(700)
-        };
-        timer.Tick += (_, _) => Refresh(root, state);
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
+        main.PropertyChanged += state.OnMainPropertyChanged;
+        window.Closed += state.OnWindowClosed;
         Refresh(root, state);
     }
 
@@ -108,6 +103,7 @@ internal static class BulkExecutionPresetsExperience
         {
             await EnsureLoadedAsync(state);
             state.PreviewAccepted = ShowPreview(state, requireConfirmation: false);
+            UpdateSummary(state);
         }));
         panel.Children.Add(Button("Select", async () =>
         {
@@ -123,6 +119,7 @@ internal static class BulkExecutionPresetsExperience
             if (state.Main.ExecutionCenter.SelectedItems.Count == 0) return;
             if (state.Main.ExecutionCenter.ExecuteSelectedCommand.CanExecute(null))
                 await state.Main.ExecutionCenter.ExecuteSelectedCommand.ExecuteAsync(null);
+            UpdateSummary(state);
         }, primary: true));
         panel.Children.Add(Button("Clear", () =>
         {
@@ -292,14 +289,27 @@ internal static class BulkExecutionPresetsExperience
     private static Brush Brush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
-    private sealed class State(MainWindowViewModel main, MainWindow window)
+    private sealed class State(MainWindowViewModel main, MainWindow window, Grid root)
     {
         public MainWindowViewModel Main { get; } = main;
         public MainWindow Window { get; } = window;
+        public Grid Root { get; } = root;
         public Border? Panel { get; set; }
         public TextBlock? Summary { get; set; }
         public BulkPreset Preset { get; set; } = BulkPreset.LowRisk;
         public bool PreviewAccepted { get; set; }
+
+        public void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.CurrentPage))
+                Refresh(Root, this);
+        }
+
+        public void OnWindowClosed(object? sender, EventArgs e)
+        {
+            Main.PropertyChanged -= OnMainPropertyChanged;
+            Window.Closed -= OnWindowClosed;
+        }
     }
 
     private enum BulkPreset
