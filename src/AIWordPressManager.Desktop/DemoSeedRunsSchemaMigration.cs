@@ -12,7 +12,7 @@ namespace AIWordPressManager.Desktop;
 /// </summary>
 internal static class DemoSeedRunsSchemaMigration
 {
-    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly object Gate = new();
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -24,7 +24,7 @@ internal static class DemoSeedRunsSchemaMigration
             true);
     }
 
-    private static async void OnDemoButtonPreviewMouseDown(
+    private static void OnDemoButtonPreviewMouseDown(
         object sender,
         System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -38,7 +38,7 @@ internal static class DemoSeedRunsSchemaMigration
 
         try
         {
-            await EnsureAsync(databasePath);
+            Ensure(databasePath);
         }
         catch (Exception exception)
         {
@@ -53,24 +53,21 @@ internal static class DemoSeedRunsSchemaMigration
         }
     }
 
-    internal static async Task EnsureAsync(
-        string databasePath,
-        CancellationToken cancellationToken = default)
+    internal static void Ensure(string databasePath)
     {
-        await Gate.WaitAsync(cancellationToken);
-        try
+        lock (Gate)
         {
-            await using var connection = new SqliteConnection(
+            using var connection = new SqliteConnection(
                 $"Data Source={databasePath};Default Timeout=30");
-            await connection.OpenAsync(cancellationToken);
+            connection.Open();
 
-            await using (var pragma = connection.CreateCommand())
+            using (var pragma = connection.CreateCommand())
             {
                 pragma.CommandText = "PRAGMA busy_timeout=30000;";
-                await pragma.ExecuteNonQueryAsync(cancellationToken);
+                pragma.ExecuteNonQuery();
             }
 
-            await using (var create = connection.CreateCommand())
+            using (var create = connection.CreateCommand())
             {
                 create.CommandText = """
                     CREATE TABLE IF NOT EXISTS DemoSeedRuns(
@@ -80,41 +77,34 @@ internal static class DemoSeedRunsSchemaMigration
                         SeededAtUtc TEXT NOT NULL,
                         Summary TEXT NOT NULL);
                     """;
-                await create.ExecuteNonQueryAsync(cancellationToken);
+                create.ExecuteNonQuery();
             }
 
-            if (!await HasColumnAsync(connection, "DemoSeedRuns", "SiteId", cancellationToken))
+            if (!HasColumn(connection, "DemoSeedRuns", "SiteId"))
             {
-                await using var alter = connection.CreateCommand();
+                using var alter = connection.CreateCommand();
                 alter.CommandText = "ALTER TABLE DemoSeedRuns ADD COLUMN SiteId TEXT NULL;";
-                await alter.ExecuteNonQueryAsync(cancellationToken);
+                alter.ExecuteNonQuery();
             }
 
-            await using (var index = connection.CreateCommand())
-            {
-                index.CommandText = """
-                    CREATE INDEX IF NOT EXISTS IX_DemoSeedRuns_SiteId
-                    ON DemoSeedRuns(SiteId);
-                    """;
-                await index.ExecuteNonQueryAsync(cancellationToken);
-            }
-        }
-        finally
-        {
-            Gate.Release();
+            using var index = connection.CreateCommand();
+            index.CommandText = """
+                CREATE INDEX IF NOT EXISTS IX_DemoSeedRuns_SiteId
+                ON DemoSeedRuns(SiteId);
+                """;
+            index.ExecuteNonQuery();
         }
     }
 
-    private static async Task<bool> HasColumnAsync(
+    private static bool HasColumn(
         SqliteConnection connection,
         string table,
-        string column,
-        CancellationToken cancellationToken)
+        string column)
     {
-        await using var command = connection.CreateCommand();
+        using var command = connection.CreateCommand();
         command.CommandText = $"PRAGMA table_info(\"{table}\");";
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
         {
             if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
                 return true;
