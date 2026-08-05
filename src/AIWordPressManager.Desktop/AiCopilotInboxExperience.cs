@@ -1,8 +1,8 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
 using AIWordPressManager.Application.Changes;
 using AIWordPressManager.Desktop.ViewModels;
 
@@ -35,16 +35,27 @@ internal static class AiCopilotInboxExperience
         root.Children.Add(panel);
 
         void Refresh() => RefreshPanel(panel, main);
-        main.PropertyChanged += (_, _) => Refresh();
-        main.Sites.SelectedSiteChanged += (_, _) => Refresh();
-
-        var timer = new DispatcherTimer(DispatcherPriority.Background, window.Dispatcher)
+        void OnMainChanged(object? _, PropertyChangedEventArgs args)
         {
-            Interval = TimeSpan.FromSeconds(2)
+            if (args.PropertyName is nameof(MainWindowViewModel.CurrentPage)
+                or nameof(MainWindowViewModel.IsOperationRunning))
+            {
+                Refresh();
+            }
+        }
+        void OnSuggestionsChanged(object? _, PropertyChangedEventArgs __) => Refresh();
+        void OnSiteChanged(object? _, EventArgs __) => Refresh();
+
+        main.PropertyChanged += OnMainChanged;
+        main.SuggestedChanges.PropertyChanged += OnSuggestionsChanged;
+        main.Sites.SelectedSiteChanged += OnSiteChanged;
+        window.Closed += (_, _) =>
+        {
+            main.PropertyChanged -= OnMainChanged;
+            main.SuggestedChanges.PropertyChanged -= OnSuggestionsChanged;
+            main.Sites.SelectedSiteChanged -= OnSiteChanged;
         };
-        timer.Tick += (_, _) => Refresh();
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
+
         Refresh();
     }
 
