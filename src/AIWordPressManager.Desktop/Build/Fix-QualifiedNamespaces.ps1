@@ -59,28 +59,17 @@ Update-FileText -Path $systemLoginExperience -SuccessMessage 'Normalized SQLite 
 $demoDataExperience = Join-Path $ProjectDirectory 'DemoDataInAppExperience.cs'
 Update-FileText -Path $demoDataExperience -SuccessMessage 'Normalized in-app demo data launcher WPF ZIndex.' -Transform {
     param($content)
-    $content.Replace(
-@'            FontWeight = FontWeights.SemiBold,
-            Panel = { ZIndex = 5000 }
-        };
-
-        button.Click'@,
-@'            FontWeight = FontWeights.SemiBold
-        };
-        Panel.SetZIndex(button, 5000);
-
-        button.Click'@)
+    $pattern = 'FontWeight = FontWeights\.SemiBold,\s*Panel = \{ ZIndex = 5000 \}\s*};\s*button\.Click'
+    $replacement = "FontWeight = FontWeights.SemiBold`r`n        };`r`n        Panel.SetZIndex(button, 5000);`r`n`r`n        button.Click"
+    [System.Text.RegularExpressions.Regex]::Replace($content, $pattern, $replacement)
 }
 
 $appCodeBehind = Join-Path $ProjectDirectory 'App.xaml.cs'
 Update-FileText -Path $appCodeBehind -SuccessMessage 'Connected MainWindow to the active SQLite database path for demo data.' -Transform {
     param($content)
-    $content.Replace(
-@'            MainWindow = _host.Services.GetRequiredService<MainWindow>();
-            MainWindow.Show();'@,
-@'            MainWindow = _host.Services.GetRequiredService<MainWindow>();
-            MainWindow.Tag = databasePath;
-            MainWindow.Show();'@)
+    $pattern = 'MainWindow = _host\.Services\.GetRequiredService<MainWindow>\(\);\s*MainWindow\.Show\(\);'
+    $replacement = "MainWindow = _host.Services.GetRequiredService<MainWindow>();`r`n            MainWindow.Tag = databasePath;`r`n            MainWindow.Show();"
+    [System.Text.RegularExpressions.Regex]::Replace($content, $pattern, $replacement)
 }
 
 Write-Host 'Desktop source normalization completed.'
