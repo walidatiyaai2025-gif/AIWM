@@ -9,7 +9,7 @@ namespace AIWordPressManager.Desktop;
 
 /// <summary>
 /// Isolates inactive page surfaces so collapsed pages cannot retain keyboard focus
-/// or receive input after navigation. The behavior is event driven.
+/// or receive input after navigation. Original page settings are restored exactly.
 /// </summary>
 internal static class InactivePageIsolationExperience
 {
@@ -45,18 +45,20 @@ internal static class InactivePageIsolationExperience
     private sealed class State(MainWindow window)
     {
         private readonly List<FrameworkElement> _pages = [];
+        private readonly Dictionary<FrameworkElement, PageInputState> _originalStates = [];
         private Grid? _contentHost;
         private bool _focusQueued;
 
         public void Bind(Grid contentHost)
         {
             if (ReferenceEquals(_contentHost, contentHost)) return;
-            DetachPages();
+            DetachPages(restoreOriginalState: true);
 
             _contentHost = contentHost;
             foreach (var page in contentHost.Children.OfType<FrameworkElement>())
             {
                 _pages.Add(page);
+                _originalStates[page] = new PageInputState(page.IsHitTestVisible, page.Focusable);
                 page.IsVisibleChanged += OnPageVisibilityChanged;
                 ApplyIsolation(page);
             }
@@ -77,11 +79,13 @@ internal static class InactivePageIsolationExperience
                 Keyboard.ClearFocus();
         }
 
-        private static void ApplyIsolation(FrameworkElement page)
+        private void ApplyIsolation(FrameworkElement page)
         {
+            if (!_originalStates.TryGetValue(page, out var original)) return;
+
             var active = page.IsVisible && page.Visibility == Visibility.Visible;
-            page.IsHitTestVisible = active;
-            page.Focusable = active;
+            page.IsHitTestVisible = active && original.IsHitTestVisible;
+            page.Focusable = active && original.Focusable;
         }
 
         private void QueueFocusVisiblePage()
@@ -97,6 +101,9 @@ internal static class InactivePageIsolationExperience
                     page.IsVisible && page.Visibility == Visibility.Visible && page.IsEnabled);
                 if (visible is null) return;
 
+                var focused = Keyboard.FocusedElement as DependencyObject;
+                if (focused is not null && IsDescendantOf(focused, visible)) return;
+
                 visible.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
             }));
         }
@@ -104,28 +111,45 @@ internal static class InactivePageIsolationExperience
         private static bool IsKeyboardFocusWithin(DependencyObject root)
         {
             var focused = Keyboard.FocusedElement as DependencyObject;
-            while (focused is not null)
+            return focused is not null && IsDescendantOf(focused, root);
+        }
+
+        private static bool IsDescendantOf(DependencyObject child, DependencyObject root)
+        {
+            var current = child;
+            while (current is not null)
             {
-                if (ReferenceEquals(focused, root)) return true;
-                focused = focused is Visual or System.Windows.Media.Media3D.Visual3D
-                    ? VisualTreeHelper.GetParent(focused)
-                    : LogicalTreeHelper.GetParent(focused);
+                if (ReferenceEquals(current, root)) return true;
+                current = current is Visual or System.Windows.Media.Media3D.Visual3D
+                    ? VisualTreeHelper.GetParent(current)
+                    : LogicalTreeHelper.GetParent(current);
             }
             return false;
         }
 
-        private void DetachPages()
+        private void DetachPages(bool restoreOriginalState)
         {
             foreach (var page in _pages)
+            {
                 page.IsVisibleChanged -= OnPageVisibilityChanged;
+                if (restoreOriginalState && _originalStates.TryGetValue(page, out var original))
+                {
+                    page.IsHitTestVisible = original.IsHitTestVisible;
+                    page.Focusable = original.Focusable;
+                }
+            }
+
             _pages.Clear();
+            _originalStates.Clear();
         }
 
         private void OnClosed(object? sender, EventArgs e)
         {
             window.Closed -= OnClosed;
-            DetachPages();
+            DetachPages(restoreOriginalState: true);
             _contentHost = null;
         }
     }
+
+    private readonly record struct PageInputState(bool IsHitTestVisible, bool Focusable);
 }
