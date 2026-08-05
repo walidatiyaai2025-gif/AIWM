@@ -53,8 +53,20 @@ internal static class DemoSeedRunsSchemaMigration
         }
     }
 
+    internal static Task EnsureAsync(
+        string databasePath,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Ensure(databasePath);
+        return Task.CompletedTask;
+    }
+
     internal static void Ensure(string databasePath)
     {
+        if (string.IsNullOrWhiteSpace(databasePath))
+            throw new ArgumentException("A valid SQLite database path is required.", nameof(databasePath));
+
         lock (Gate)
         {
             using var connection = new SqliteConnection(
