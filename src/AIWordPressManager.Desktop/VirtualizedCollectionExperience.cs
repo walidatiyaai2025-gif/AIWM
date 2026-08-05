@@ -5,8 +5,8 @@ using System.Windows.Controls;
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
-/// Applies WPF virtualization and recycling to collection controls as they are loaded.
-/// This keeps large grids and lists responsive without changing their view models.
+/// Applies safe WPF virtualization and recycling to collection controls as they load.
+/// Explicit screen-level scrolling and row-detail settings are preserved.
 /// </summary>
 internal static class VirtualizedCollectionExperience
 {
@@ -42,26 +42,30 @@ internal static class VirtualizedCollectionExperience
             case DataGrid grid:
                 grid.EnableRowVirtualization = true;
                 grid.EnableColumnVirtualization = true;
-                grid.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.Collapsed;
-                ScrollViewer.SetHorizontalScrollBarVisibility(grid, ScrollBarVisibility.Auto);
-                ScrollViewer.SetVerticalScrollBarVisibility(grid, ScrollBarVisibility.Auto);
+                EnsureAutomaticScrollBars(grid);
+                break;
+
+            // ListView derives from ListBox, so it must be matched first.
+            case ListView listView:
+                EnsureAutomaticScrollBars(listView);
                 break;
 
             case ListBox listBox:
-                ScrollViewer.SetVerticalScrollBarVisibility(listBox, ScrollBarVisibility.Auto);
-                if (ScrollViewer.GetHorizontalScrollBarVisibility(listBox) == ScrollBarVisibility.Visible)
-                    ScrollViewer.SetHorizontalScrollBarVisibility(listBox, ScrollBarVisibility.Auto);
-                break;
-
-            case ListView listView:
-                ScrollViewer.SetVerticalScrollBarVisibility(listView, ScrollBarVisibility.Auto);
-                if (ScrollViewer.GetHorizontalScrollBarVisibility(listView) == ScrollBarVisibility.Visible)
-                    ScrollViewer.SetHorizontalScrollBarVisibility(listView, ScrollBarVisibility.Auto);
+                EnsureAutomaticScrollBars(listBox);
                 break;
 
             case TreeView treeView:
-                ScrollViewer.SetVerticalScrollBarVisibility(treeView, ScrollBarVisibility.Auto);
+                EnsureAutomaticScrollBars(treeView);
                 break;
         }
+    }
+
+    private static void EnsureAutomaticScrollBars(DependencyObject control)
+    {
+        if (ScrollViewer.GetVerticalScrollBarVisibility(control) == ScrollBarVisibility.Disabled)
+            ScrollViewer.SetVerticalScrollBarVisibility(control, ScrollBarVisibility.Auto);
+
+        if (ScrollViewer.GetHorizontalScrollBarVisibility(control) == ScrollBarVisibility.Visible)
+            ScrollViewer.SetHorizontalScrollBarVisibility(control, ScrollBarVisibility.Auto);
     }
 }
