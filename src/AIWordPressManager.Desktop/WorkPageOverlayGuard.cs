@@ -75,14 +75,14 @@ internal static class WorkPageOverlayGuard
             if (state.SurfaceScanPending)
             {
                 state.SurfaceScanPending = false;
-                SuppressBlockedSurfaces(state.Root);
+                RetireBlockedSurfaces(state.Root);
             }
 
             EnsureCompactExecutionStatus(state);
         }));
     }
 
-    private static void SuppressBlockedSurfaces(DependencyObject root)
+    private static void RetireBlockedSurfaces(DependencyObject root)
     {
         foreach (var element in Enumerate<FrameworkElement>(root).ToArray())
         {
@@ -102,7 +102,7 @@ internal static class WorkPageOverlayGuard
                     || tag.Contains("AiCopilotInbox", StringComparison.OrdinalIgnoreCase)
                     || tag.Contains("FloatingWorkspace", StringComparison.OrdinalIgnoreCase))
                 {
-                    Collapse(element);
+                    FloatingWorkspaceManager.Retire(element);
                     continue;
                 }
             }
@@ -113,7 +113,7 @@ internal static class WorkPageOverlayGuard
                 if (BlockedTextMarkers.Any(marker =>
                         text.Contains(marker, StringComparison.OrdinalIgnoreCase)))
                 {
-                    Collapse(element);
+                    FloatingWorkspaceManager.Retire(element);
                 }
             }
         }
@@ -166,14 +166,6 @@ internal static class WorkPageOverlayGuard
             ? Visibility.Visible
             : Visibility.Collapsed;
         status.IsHitTestVisible = status.Visibility == Visibility.Visible;
-    }
-
-    private static void Collapse(FrameworkElement element)
-    {
-        element.Visibility = Visibility.Collapsed;
-        element.IsHitTestVisible = false;
-        element.Focusable = false;
-        Panel.SetZIndex(element, -1000);
     }
 
     private static string ReadDescendantText(DependencyObject root)
