@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Threading;
 using AIWordPressManager.Application.Abstractions;
 using AIWordPressManager.Application.Abstractions.WordPress;
 using AIWordPressManager.Application.Sites;
@@ -16,6 +17,8 @@ public sealed partial class SitesViewModel : ObservableObject
     private readonly IWordPressConnectionTester _connectionTester;
     private readonly IDialogService _dialogService;
     private readonly ICurrentSiteContext _currentSiteContext;
+    private CancellationTokenSource? _siteDetailsCancellation;
+    private CancellationTokenSource? _selectionNotificationCancellation;
 
     public ObservableCollection<SiteCardViewModel> Sites { get; } = [];
     public ObservableCollection<SiteCardViewModel> FilteredSites { get; } = [];
@@ -58,7 +61,7 @@ public sealed partial class SitesViewModel : ObservableObject
     public string ResultsSummary => $"Showing {FilteredCount} of {TotalSites} site(s)";
     public string SelectedLastTestText => SelectedSiteDetails?.LastConnectionTestAtUtc?.ToLocalTime().ToString("g") ?? "Never";
     public string SelectedHomeUrl => string.IsNullOrWhiteSpace(SelectedSiteDetails?.HomeUrl)
-        ? SelectedSiteDetails?.SiteUrl ?? string.Empty
+        ? SelectedSiteDetails?.SiteUrl ?? SelectedSite?.SiteUrl ?? string.Empty
         : SelectedSiteDetails.HomeUrl!;
 
     public SitesViewModel(
@@ -101,7 +104,7 @@ public sealed partial class SitesViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedHomeUrl));
         NotifyCommandStates();
         _currentSiteContext.SetCurrentSite(value?.Id, value?.Name, value?.SiteUrl);
-        SelectedSiteChanged?.Invoke(this, EventArgs.Empty);
+        QueueSelectedSiteChangedNotification();
     }
 
     partial void OnSelectedSiteDetailsChanged(SiteDetailsDto? value)
@@ -163,25 +166,87 @@ public sealed partial class SitesViewModel : ObservableObject
         }
     }
 
-    private async Task SelectSiteAsync(SiteCardViewModel? site)
+    private Task SelectSiteAsync(SiteCardViewModel? site)
     {
-        if (site is null)
-            return;
+        if (site is null || ReferenceEquals(SelectedSite, site))
+            return Task.CompletedTask;
 
+        // Selection is deliberately synchronous so the card highlight and active-site
+        // context update in the same UI frame. Details load independently afterwards.
         SelectedSite = site;
+        SelectedSiteDetails = null;
+        StatusMessage = $"{site.Name} selected. Loading its local details in the background…";
+        StartSelectedSiteDetailsLoad(site);
+        return Task.CompletedTask;
+    }
+
+    private void StartSelectedSiteDetailsLoad(SiteCardViewModel site)
+    {
+        _siteDetailsCancellation?.Cancel();
+        _siteDetailsCancellation?.Dispose();
+        _siteDetailsCancellation = new CancellationTokenSource();
+        _ = LoadSelectedSiteDetailsAsync(site, _siteDetailsCancellation.Token);
+    }
+
+    private async Task LoadSelectedSiteDetailsAsync(SiteCardViewModel site, CancellationToken cancellationToken)
+    {
         CurrentOperation = "Loading selected site details…";
         try
         {
-            SelectedSiteDetails = await _siteManagementService.GetDetailsAsync(site.Id);
-            StatusMessage = $"{site.Name} selected. All modules will use its local SQLite snapshot.";
+            // Yield once so WPF can render the selected card before SQLite work starts.
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            var details = await _siteManagementService.GetDetailsAsync(site.Id);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (SelectedSite?.Id != site.Id)
+                return;
+
+            SelectedSiteDetails = details;
+            StatusMessage = $"{site.Name} selected. Modules will load its SQLite snapshot when opened.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer card was selected; stale details must not overwrite it.
         }
         catch (Exception ex)
         {
-            ErrorMessage = "Could not load site details. " + ex.Message;
+            if (SelectedSite?.Id == site.Id)
+                ErrorMessage = "Could not load site details. " + ex.Message;
         }
         finally
         {
-            CurrentOperation = string.Empty;
+            if (SelectedSite?.Id == site.Id)
+                CurrentOperation = string.Empty;
+        }
+    }
+
+    private void QueueSelectedSiteChangedNotification()
+    {
+        _selectionNotificationCancellation?.Cancel();
+        _selectionNotificationCancellation?.Dispose();
+        _selectionNotificationCancellation = new CancellationTokenSource();
+        _ = NotifySelectedSiteChangedAsync(_selectionNotificationCancellation.Token);
+    }
+
+    private async Task NotifySelectedSiteChangedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Debounce rapid card clicks and allow the selection visual to render first.
+            await Task.Delay(120, cancellationToken);
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is null || dispatcher.HasShutdownStarted)
+                return;
+
+            await dispatcher.InvokeAsync(
+                () => SelectedSiteChanged?.Invoke(this, EventArgs.Empty),
+                DispatcherPriority.Background,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer selection superseded this notification.
         }
     }
 
@@ -389,6 +454,8 @@ public sealed partial class SitesViewModel : ObservableObject
 
     private void ClearSelection()
     {
+        _siteDetailsCancellation?.Cancel();
+        _selectionNotificationCancellation?.Cancel();
         SelectedSite = null;
         SelectedSiteDetails = null;
     }
