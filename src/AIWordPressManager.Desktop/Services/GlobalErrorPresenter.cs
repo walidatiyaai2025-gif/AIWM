@@ -45,10 +45,15 @@ public sealed class GlobalErrorPresenter(ILogger<GlobalErrorPresenter> logger, A
         {
             _ = dispatcher.BeginInvoke(
                 DispatcherPriority.Normal,
-                new Action(() => Show(exception, module)));
+                new Action(() => ShowCoreOrActivate(exception, module)));
             return;
         }
 
+        ShowCoreOrActivate(exception, module);
+    }
+
+    private void ShowCoreOrActivate(Exception exception, string module)
+    {
         lock (WindowGate)
         {
             if (_activeWindow is not null &&
