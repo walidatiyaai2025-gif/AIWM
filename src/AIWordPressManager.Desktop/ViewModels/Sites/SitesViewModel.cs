@@ -171,8 +171,6 @@ public sealed partial class SitesViewModel : ObservableObject
         if (site is null || ReferenceEquals(SelectedSite, site))
             return Task.CompletedTask;
 
-        // Selection is deliberately synchronous so the card highlight and active-site
-        // context update in the same UI frame. Details load independently afterwards.
         SelectedSite = site;
         SelectedSiteDetails = null;
         StatusMessage = $"{site.Name} selected. Loading its local details in the background…";
@@ -193,7 +191,6 @@ public sealed partial class SitesViewModel : ObservableObject
         CurrentOperation = "Loading selected site details…";
         try
         {
-            // Yield once so WPF can render the selected card before SQLite work starts.
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             var details = await _siteManagementService.GetDetailsAsync(site.Id);
@@ -207,7 +204,6 @@ public sealed partial class SitesViewModel : ObservableObject
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // A newer card was selected; stale details must not overwrite it.
         }
         catch (Exception ex)
         {
@@ -233,9 +229,8 @@ public sealed partial class SitesViewModel : ObservableObject
     {
         try
         {
-            // Debounce rapid card clicks and allow the selection visual to render first.
             await Task.Delay(120, cancellationToken);
-            var dispatcher = Application.Current?.Dispatcher;
+            var dispatcher = global::System.Windows.Application.Current?.Dispatcher;
             if (dispatcher is null || dispatcher.HasShutdownStarted)
                 return;
 
@@ -246,7 +241,6 @@ public sealed partial class SitesViewModel : ObservableObject
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // A newer selection superseded this notification.
         }
     }
 
@@ -448,7 +442,6 @@ public sealed partial class SitesViewModel : ObservableObject
         }
         catch
         {
-            // The shell may be unavailable on locked-down workstations.
         }
     }
 
