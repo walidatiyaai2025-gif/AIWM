@@ -28,13 +28,13 @@ internal static class LiveOperationsExperience
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
         if (root.RowDefinitions.Count < 4) return;
 
-        var panel = BuildPanel(main);
-        var state = new State(window, main, panel);
+        var controls = BuildPanel(main);
+        var state = new State(window, main, root, controls);
         Attached.Add(window, state);
 
-        Grid.SetRow(panel, 3);
-        Panel.SetZIndex(panel, 1000);
-        root.Children.Add(panel);
+        Grid.SetRow(controls.Panel, 3);
+        Panel.SetZIndex(controls.Panel, 1000);
+        root.Children.Add(controls.Panel);
 
         main.PropertyChanged += state.OnMainPropertyChanged;
         window.Activated += state.OnWindowStateChanged;
@@ -43,12 +43,12 @@ internal static class LiveOperationsExperience
         window.Closed += state.OnClosed;
 
         ApplyVisibility(state);
-        Refresh(panel, main);
+        Refresh(state);
     }
 
-    private static Border BuildPanel(MainWindowViewModel main)
+    private static PanelControls BuildPanel(MainWindowViewModel main)
     {
-        var border = new Border
+        var panel = new Border
         {
             Width = 330,
             HorizontalAlignment = HorizontalAlignment.Right,
@@ -65,7 +65,7 @@ internal static class LiveOperationsExperience
         };
 
         var stack = new StackPanel();
-        border.Child = stack;
+        panel.Child = stack;
 
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -91,59 +91,64 @@ internal static class LiveOperationsExperience
         Grid.SetColumn(toggle, 1);
         header.Children.Add(toggle);
 
-        var body = new StackPanel { Tag = "LiveOperationsBody", Margin = new Thickness(0, 10, 0, 0) };
+        var body = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
         stack.Children.Add(body);
 
-        body.Children.Add(new TextBlock
+        var operationState = new TextBlock
         {
             Text = "Idle",
-            Tag = "OperationState",
             FontWeight = FontWeights.SemiBold,
             Foreground = ResourceBrush("PrimaryBrush", Brushes.Teal)
-        });
-        body.Children.Add(new TextBlock
+        };
+        body.Children.Add(operationState);
+
+        var operationTitle = new TextBlock
         {
             Text = "No background operation is running.",
-            Tag = "OperationTitle",
             Margin = new Thickness(0, 5, 0, 0),
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap
-        });
-        body.Children.Add(new TextBlock
+        };
+        body.Children.Add(operationTitle);
+
+        var operationStep = new TextBlock
         {
             Text = "Waiting for the next task.",
-            Tag = "OperationStep",
             Margin = new Thickness(0, 3, 0, 0),
             Foreground = ResourceBrush("TextSecondaryBrush", Brushes.DimGray),
             TextWrapping = TextWrapping.Wrap
-        });
-        body.Children.Add(new ProgressBar
+        };
+        body.Children.Add(operationStep);
+
+        var operationProgress = new ProgressBar
         {
-            Tag = "OperationProgress",
             Height = 8,
             Minimum = 0,
             Maximum = 100,
             Margin = new Thickness(0, 10, 0, 0),
             Value = 0
-        });
-        body.Children.Add(new TextBlock
+        };
+        body.Children.Add(operationProgress);
+
+        var operationPercent = new TextBlock
         {
             Text = "0%",
-            Tag = "OperationPercent",
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 3, 0, 0),
             FontSize = 11,
             Foreground = ResourceBrush("TextSecondaryBrush", Brushes.DimGray)
-        });
-        body.Children.Add(new TextBlock
+        };
+        body.Children.Add(operationPercent);
+
+        var operationDetail = new TextBlock
         {
             Text = string.Empty,
-            Tag = "OperationDetail",
             Margin = new Thickness(0, 8, 0, 0),
             TextWrapping = TextWrapping.Wrap,
             MaxHeight = 90,
             Foreground = ResourceBrush("TextSecondaryBrush", Brushes.DimGray)
-        });
+        };
+        body.Children.Add(operationDetail);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
         body.Children.Add(actions);
@@ -165,7 +170,8 @@ internal static class LiveOperationsExperience
             toggle.Content = body.Visibility == Visibility.Visible ? "−" : "+";
         };
 
-        return border;
+        return new PanelControls(panel, operationState, operationTitle, operationStep,
+            operationDetail, operationProgress, operationPercent);
     }
 
     private static void ApplyVisibility(State state)
@@ -173,22 +179,17 @@ internal static class LiveOperationsExperience
         var pageAllowsPanel = state.Main.CurrentPage.Equals("Jobs", StringComparison.OrdinalIgnoreCase) ||
                               state.Main.CurrentPage.Equals("Operations Center", StringComparison.OrdinalIgnoreCase);
         var visible = pageAllowsPanel && state.Window.IsActive && state.Window.WindowState != WindowState.Minimized;
-        state.Panel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        state.Panel.IsHitTestVisible = visible;
-        if (visible) Refresh(state.Panel, state.Main);
+        state.Controls.Panel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        state.Controls.Panel.IsHitTestVisible = visible;
+        if (visible) Refresh(state);
     }
 
-    private static void Refresh(Border panel, MainWindowViewModel main)
+    private static void Refresh(State state)
     {
-        if (panel.Visibility != Visibility.Visible) return;
+        var controls = state.Controls;
+        if (controls.Panel.Visibility != Visibility.Visible) return;
 
-        var state = Find<TextBlock>(panel, "OperationState");
-        var title = Find<TextBlock>(panel, "OperationTitle");
-        var step = Find<TextBlock>(panel, "OperationStep");
-        var detail = Find<TextBlock>(panel, "OperationDetail");
-        var progress = Find<ProgressBar>(panel, "OperationProgress");
-        var percent = Find<TextBlock>(panel, "OperationPercent");
-
+        var main = state.Main;
         var running = main.IsOperationRunning || main.IsGuidedAnalysisRunning || main.IsSafeAutopilotRunning;
         var value = main.IsSafeAutopilotRunning
             ? main.SafeAutopilotProgress
@@ -213,19 +214,18 @@ internal static class LiveOperationsExperience
                 ? main.GuidedAnalysisDetail
                 : main.OperationDetail;
 
-        if (state is not null)
-        {
-            state.Text = running ? "● RUNNING" : value >= 100 ? "✓ COMPLETED" : "○ IDLE";
-            state.Foreground = running
-                ? ResourceBrush("PrimaryBrush", Brushes.Teal)
-                : value >= 100 ? Brushes.ForestGreen : ResourceBrush("TextSecondaryBrush", Brushes.DimGray);
-        }
-        if (title is not null) title.Text = string.IsNullOrWhiteSpace(currentTitle) ? "Ready" : currentTitle;
-        if (step is not null) step.Text = string.IsNullOrWhiteSpace(currentStep) ? "Idle" : currentStep;
-        if (detail is not null) detail.Text = string.IsNullOrWhiteSpace(currentDetail) ? "No background operation is running." : currentDetail;
-        if (progress is not null) progress.Value = value;
-        if (percent is not null) percent.Text = $"{value}%";
-        panel.Opacity = running ? 1 : 0.94;
+        controls.State.Text = running ? "● RUNNING" : value >= 100 ? "✓ COMPLETED" : "○ IDLE";
+        controls.State.Foreground = running
+            ? ResourceBrush("PrimaryBrush", Brushes.Teal)
+            : value >= 100 ? Brushes.ForestGreen : ResourceBrush("TextSecondaryBrush", Brushes.DimGray);
+        controls.Title.Text = string.IsNullOrWhiteSpace(currentTitle) ? "Ready" : currentTitle;
+        controls.Step.Text = string.IsNullOrWhiteSpace(currentStep) ? "Idle" : currentStep;
+        controls.Detail.Text = string.IsNullOrWhiteSpace(currentDetail)
+            ? "No background operation is running."
+            : currentDetail;
+        controls.Progress.Value = value;
+        controls.Percent.Text = $"{value}%";
+        controls.Panel.Opacity = running ? 1 : 0.94;
     }
 
     private static bool IsOperationProperty(string? propertyName) => propertyName is
@@ -243,26 +243,24 @@ internal static class LiveOperationsExperience
         nameof(MainWindowViewModel.SafeAutopilotStage) or
         nameof(MainWindowViewModel.SafeAutopilotSummary);
 
-    private static T? Find<T>(DependencyObject root, string tag) where T : FrameworkElement
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is T element && Equals(element.Tag, tag)) return element;
-            var nested = Find<T>(child, tag);
-            if (nested is not null) return nested;
-        }
-        return null;
-    }
-
     private static Brush ResourceBrush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
-    private sealed class State(MainWindow window, MainWindowViewModel main, Border panel)
+    private sealed record PanelControls(
+        Border Panel,
+        TextBlock State,
+        TextBlock Title,
+        TextBlock Step,
+        TextBlock Detail,
+        ProgressBar Progress,
+        TextBlock Percent);
+
+    private sealed class State(MainWindow window, MainWindowViewModel main, Grid root, PanelControls controls)
     {
         public MainWindow Window { get; } = window;
         public MainWindowViewModel Main { get; } = main;
-        public Border Panel { get; } = panel;
+        public Grid Root { get; } = root;
+        public PanelControls Controls { get; } = controls;
 
         public void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -273,7 +271,7 @@ internal static class LiveOperationsExperience
             }
 
             if (IsOperationProperty(e.PropertyName))
-                Refresh(Panel, Main);
+                Refresh(this);
         }
 
         public void OnWindowStateChanged(object? sender, EventArgs e) => ApplyVisibility(this);
@@ -285,6 +283,9 @@ internal static class LiveOperationsExperience
             Window.Deactivated -= OnWindowStateChanged;
             Window.StateChanged -= OnWindowStateChanged;
             Window.Closed -= OnClosed;
+
+            Root.Children.Remove(Controls.Panel);
+            Controls.Panel.Child = null;
         }
     }
 }
