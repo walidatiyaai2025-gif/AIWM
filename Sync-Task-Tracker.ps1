@@ -13,7 +13,8 @@ $root = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
     [System.IO.Path]::GetFullPath((Get-Location).ProviderPath)
 }
 
-$importScript = Join-Path $root 'Build\Import-TaskTrackerFromDocx.ps1'
+$xmlImportScript = Join-Path $root 'Build\Import-TaskTrackerFromDocxXml.ps1'
+$legacyImportScript = Join-Path $root 'Build\Import-TaskTrackerFromDocx.ps1'
 $wordUpdateScript = Join-Path $root 'Build\Update-TaskTrackerDocx.ps1'
 $reportPath = Join-Path $root 'docs\task-tracker\TaskTracker.md'
 $jsonPath = Join-Path $root 'docs\task-tracker\TaskTracker.json'
@@ -55,14 +56,18 @@ try {
         throw "Task tracker Word document was not found: $documentPath"
     }
 
-    $importCode = Invoke-PowerShellScript `
-        -Path $importScript `
-        -Arguments @('-ProjectRoot', $root, '-NoPause') `
-        -AllowedExitCodes @(0, 2)
-
-    if ($importCode -eq 2) {
-        Write-Warning 'The task list was imported, but missing or duplicate IDs were detected.'
+    $selectedImporter = if (Test-Path -LiteralPath $xmlImportScript -PathType Leaf) {
+        $xmlImportScript
+    } elseif (Test-Path -LiteralPath $legacyImportScript -PathType Leaf) {
+        $legacyImportScript
+    } else {
+        throw 'No task tracker import script was found.'
     }
+
+    Invoke-PowerShellScript `
+        -Path $selectedImporter `
+        -Arguments @('-ProjectRoot', $root, '-NoPause') `
+        -AllowedExitCodes @(0) | Out-Null
 
     if (-not $SkipWordColoring) {
         try {
@@ -82,6 +87,7 @@ try {
     if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
         Write-Host ''
         Write-Host 'Task tracker synchronized successfully.' -ForegroundColor Green
+        Write-Host "Importer: $([System.IO.Path]::GetFileName($selectedImporter))" -ForegroundColor DarkGray
         Write-Host "Report: $reportPath" -ForegroundColor Cyan
         try { Start-Process explorer.exe -ArgumentList "/select,`"$reportPath`"" | Out-Null } catch { }
     }
