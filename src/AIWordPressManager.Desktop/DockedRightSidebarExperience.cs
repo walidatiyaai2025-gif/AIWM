@@ -4,15 +4,11 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
-/// <summary>
-/// Converts the main work area into content plus one docked right workspace.
-/// Existing journey, operation, notification, AI and suggestion data is surfaced
-/// in-place; full pages remain available through the existing NavigateCommand.
-/// </summary>
 internal static class DockedRightSidebarExperience
 {
     private static readonly ConditionalWeakTable<MainWindow, State> Attached = new();
@@ -62,7 +58,6 @@ internal static class DockedRightSidebarExperience
 
         Attached.Add(window, state);
         state.Attach();
-        state.Refresh();
     }
 
     private static Border BuildSidebar(State state)
@@ -86,6 +81,7 @@ internal static class DockedRightSidebarExperience
         var header = new Grid { Height = 42, Margin = new Thickness(5, 4, 5, 4) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
         state.HeaderText = new TextBlock
         {
             Text = "Workspace",
@@ -97,7 +93,7 @@ internal static class DockedRightSidebarExperience
         };
         header.Children.Add(state.HeaderText);
 
-        var toggle = new Button
+        state.ToggleButton = new Button
         {
             Content = "☰",
             Width = 32,
@@ -106,11 +102,10 @@ internal static class DockedRightSidebarExperience
             ToolTip = "Open or close workspace sidebar",
             Focusable = false
         };
-        toggle.Click += state.OnToggleClick;
-        Grid.SetColumn(toggle, 1);
-        header.Children.Add(toggle);
+        state.ToggleButton.Click += state.OnToggleClick;
+        Grid.SetColumn(state.ToggleButton, 1);
+        header.Children.Add(state.ToggleButton);
         layout.Children.Add(header);
-        state.ToggleButton = toggle;
 
         var tabs = new StackPanel
         {
@@ -134,6 +129,7 @@ internal static class DockedRightSidebarExperience
         Grid.SetRow(state.DetailHost, 2);
         layout.Children.Add(state.DetailHost);
 
+        state.InitializeViews();
         return shell;
     }
 
@@ -148,6 +144,7 @@ internal static class DockedRightSidebarExperience
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         });
+
         var text = new TextBlock
         {
             Text = label,
@@ -185,7 +182,32 @@ internal static class DockedRightSidebarExperience
         Grid contentHost)
     {
         private bool _expanded;
+        private bool _refreshQueued;
+        private bool _notificationsDirty = true;
         private SidebarSection _section = SidebarSection.Journey;
+        private readonly Dictionary<SidebarSection, UIElement> _views = [];
+
+        private TextBlock _journeyTitle = null!;
+        private TextBlock _journeyDescription = null!;
+        private ProgressBar _journeyProgress = null!;
+        private TextBlock _journeyPercent = null!;
+
+        private TextBlock _aiTitle = null!;
+        private TextBlock _aiDescription = null!;
+        private TextBlock _aiPending = null!;
+        private TextBlock _aiApproved = null!;
+
+        private TextBlock _operationTitle = null!;
+        private TextBlock _operationStep = null!;
+        private ProgressBar _operationProgress = null!;
+        private TextBlock _operationDetail = null!;
+
+        private StackPanel _notificationItems = null!;
+
+        private TextBlock _quickTitle = null!;
+        private TextBlock _quickApproved = null!;
+        private TextBlock _quickReady = null!;
+        private TextBlock _quickFailed = null!;
 
         public MainWindow Window { get; } = window;
         public Grid Root { get; } = root;
@@ -199,6 +221,15 @@ internal static class DockedRightSidebarExperience
         public List<Button> SectionButtons { get; } = [];
         public List<TextBlock> Labels { get; } = [];
 
+        public void InitializeViews()
+        {
+            _views[SidebarSection.Journey] = BuildJourneyView();
+            _views[SidebarSection.Ai] = BuildAiView();
+            _views[SidebarSection.Operations] = BuildOperationsView();
+            _views[SidebarSection.Notifications] = BuildNotificationsView();
+            _views[SidebarSection.QuickFix] = BuildQuickFixView();
+        }
+
         public void Attach()
         {
             Main.PropertyChanged += OnMainPropertyChanged;
@@ -207,7 +238,7 @@ internal static class DockedRightSidebarExperience
             Main.ExecutionCenter.PropertyChanged += OnRelatedPropertyChanged;
             Main.SuggestedChanges.Items.CollectionChanged += OnCollectionChanged;
             Main.ExecutionCenter.Items.CollectionChanged += OnCollectionChanged;
-            Main.Operations.History.CollectionChanged += OnCollectionChanged;
+            Main.Operations.History.CollectionChanged += OnHistoryChanged;
             Main.Operations.Operations.CollectionChanged += OnCollectionChanged;
             Window.Closed += OnClosed;
         }
@@ -222,7 +253,7 @@ internal static class DockedRightSidebarExperience
             ToggleButton.ToolTip = _expanded ? "Close workspace sidebar" : "Open workspace sidebar";
             foreach (var label in Labels)
                 label.Visibility = _expanded ? Visibility.Visible : Visibility.Collapsed;
-            Refresh();
+            QueueRefresh();
         }
 
         public void OnSectionClick(object sender, RoutedEventArgs e)
@@ -232,7 +263,7 @@ internal static class DockedRightSidebarExperience
             if (!_expanded)
                 OnToggleClick(sender, e);
             else
-                Refresh();
+                QueueRefresh();
         }
 
         private void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -244,152 +275,221 @@ internal static class DockedRightSidebarExperience
                 nameof(MainWindowViewModel.CurrentJourneyStepTitle) or
                 nameof(MainWindowViewModel.CurrentJourneyStepDescription) or
                 nameof(MainWindowViewModel.DashboardJourneyProgress) or
+                nameof(MainWindowViewModel.DashboardAiSuggestions) or
                 nameof(MainWindowViewModel.IsOperationRunning) or
                 nameof(MainWindowViewModel.OperationProgress) or
                 nameof(MainWindowViewModel.OperationTitle) or
                 nameof(MainWindowViewModel.OperationStep) or
                 nameof(MainWindowViewModel.OperationDetail))
-                Refresh();
+                QueueRefresh();
         }
 
-        private void OnRelatedPropertyChanged(object? sender, PropertyChangedEventArgs e) => Refresh();
-        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => Refresh();
+        private void OnRelatedPropertyChanged(object? sender, PropertyChangedEventArgs e) => QueueRefresh();
+        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueRefresh();
 
-        public void Refresh()
+        private void OnHistoryChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            _notificationsDirty = true;
+            QueueRefresh();
+        }
+
+        private void QueueRefresh()
+        {
+            if (!_expanded || _refreshQueued || Window.Dispatcher.HasShutdownStarted) return;
+            _refreshQueued = true;
+            Window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                _refreshQueued = false;
+                RefreshVisibleSection();
+            }));
+        }
+
+        private void RefreshVisibleSection()
         {
             if (!_expanded || !Window.IsLoaded) return;
 
-            HeaderText.Text = _section switch
-            {
-                SidebarSection.Journey => "Journey",
-                SidebarSection.Ai => "AI Copilot",
-                SidebarSection.Operations => "Operations",
-                SidebarSection.Notifications => "Notifications",
-                SidebarSection.QuickFix => "Quick Fix",
-                _ => "Workspace"
-            };
-
+            HeaderText.Text = SectionTitle(_section);
             foreach (var button in SectionButtons)
                 button.FontWeight = Equals(button.Tag, _section) ? FontWeights.Bold : FontWeights.Normal;
 
-            DetailHost.Children.Clear();
-            DetailHost.Children.Add(_section switch
+            var view = _views[_section];
+            if (DetailHost.Children.Count != 1 || !ReferenceEquals(DetailHost.Children[0], view))
             {
-                SidebarSection.Journey => BuildJourneyContent(),
-                SidebarSection.Ai => BuildAiContent(),
-                SidebarSection.Operations => BuildOperationsContent(),
-                SidebarSection.Notifications => BuildNotificationsContent(),
-                SidebarSection.QuickFix => BuildQuickFixContent(),
-                _ => new TextBlock { Text = "No workspace selected." }
-            });
+                DetailHost.Children.Clear();
+                DetailHost.Children.Add(view);
+            }
+
+            switch (_section)
+            {
+                case SidebarSection.Journey:
+                    RefreshJourney();
+                    break;
+                case SidebarSection.Ai:
+                    RefreshAi();
+                    break;
+                case SidebarSection.Operations:
+                    RefreshOperations();
+                    break;
+                case SidebarSection.Notifications:
+                    RefreshNotifications();
+                    break;
+                case SidebarSection.QuickFix:
+                    RefreshQuickFix();
+                    break;
+            }
         }
 
-        private UIElement BuildJourneyContent()
+        private UIElement BuildJourneyView()
         {
             var panel = BasePanel("CURRENT JOURNEY");
-            panel.Children.Add(Title(string.IsNullOrWhiteSpace(Main.CurrentJourneyStepTitle)
-                ? "Select or connect a website"
-                : Main.CurrentJourneyStepTitle));
-            panel.Children.Add(Body(Main.CurrentJourneyStepDescription));
-            panel.Children.Add(new ProgressBar
-            {
-                Minimum = 0,
-                Maximum = 100,
-                Value = Math.Clamp(Main.DashboardJourneyProgress, 0, 100),
-                Height = 8,
-                Margin = new Thickness(0, 12, 0, 5)
-            });
-            panel.Children.Add(Body($"Journey progress: {Math.Clamp(Main.DashboardJourneyProgress, 0, 100)}%"));
+            _journeyTitle = Title(null);
+            _journeyDescription = Body(null);
+            _journeyProgress = Progress();
+            _journeyPercent = Body(null);
+            panel.Children.Add(_journeyTitle);
+            panel.Children.Add(_journeyDescription);
+            panel.Children.Add(_journeyProgress);
+            panel.Children.Add(_journeyPercent);
             panel.Children.Add(OpenButton("Open dashboard journey", "Dashboard"));
             return Scroll(panel);
         }
 
-        private UIElement BuildAiContent()
+        private UIElement BuildAiView()
         {
             var panel = BasePanel("AI COPILOT");
-            panel.Children.Add(Title(Main.DashboardAiSuggestions > 0
-                ? $"{Main.DashboardAiSuggestions} AI suggestion(s) available"
-                : "No AI suggestions yet"));
-            panel.Children.Add(Body(Main.DashboardAiSuggestions > 0
-                ? "Review the existing AI recommendations, risk and expected result before approval."
-                : "Synchronize and analyze the website to generate reviewable recommendations."));
-            panel.Children.Add(Metric("Pending", Main.SuggestedChanges.PendingCount));
-            panel.Children.Add(Metric("Approved", Main.SuggestedChanges.ApprovedCount));
+            _aiTitle = Title(null);
+            _aiDescription = Body(null);
+            _aiPending = MetricText("Pending", 0);
+            _aiApproved = MetricText("Approved", 0);
+            panel.Children.Add(_aiTitle);
+            panel.Children.Add(_aiDescription);
+            panel.Children.Add(Metric(_aiPending));
+            panel.Children.Add(Metric(_aiApproved));
             panel.Children.Add(OpenButton("Open AI Studio", "AI Studio"));
             panel.Children.Add(OpenButton("Review suggested changes", "Suggested Changes"));
             return Scroll(panel);
         }
 
-        private UIElement BuildOperationsContent()
+        private UIElement BuildOperationsView()
         {
             var panel = BasePanel("LIVE OPERATIONS");
-            var running = Main.IsOperationRunning || Main.IsGuidedAnalysisRunning || Main.IsSafeAutopilotRunning;
-            panel.Children.Add(Title(running ? "Operation running" : "No operation is running"));
-            panel.Children.Add(Body(string.IsNullOrWhiteSpace(Main.OperationTitle) ? "Ready" : Main.OperationTitle));
-            panel.Children.Add(Body(string.IsNullOrWhiteSpace(Main.OperationStep) ? "Idle" : Main.OperationStep));
-            panel.Children.Add(new ProgressBar
-            {
-                Minimum = 0,
-                Maximum = 100,
-                Value = Math.Clamp(Main.OperationProgress, 0, 100),
-                Height = 8,
-                Margin = new Thickness(0, 12, 0, 5)
-            });
-            panel.Children.Add(Body(string.IsNullOrWhiteSpace(Main.OperationDetail)
-                ? $"Running jobs: {Main.DashboardRunningJobs}"
-                : Main.OperationDetail));
+            _operationTitle = Title(null);
+            _operationStep = Body(null);
+            _operationProgress = Progress();
+            _operationDetail = Body(null);
+            panel.Children.Add(_operationTitle);
+            panel.Children.Add(_operationStep);
+            panel.Children.Add(_operationProgress);
+            panel.Children.Add(_operationDetail);
             panel.Children.Add(OpenButton("Open Operations Center", "Operations Center"));
             panel.Children.Add(OpenButton("Open Jobs", "Jobs"));
             return Scroll(panel);
         }
 
-        private UIElement BuildNotificationsContent()
+        private UIElement BuildNotificationsView()
         {
             var panel = BasePanel("LATEST EVENTS");
-            var history = Main.Operations.History.Take(8).ToArray();
-            if (history.Length == 0)
-            {
-                panel.Children.Add(Body("No workflow events yet."));
-            }
-            else
-            {
-                foreach (var item in history)
-                {
-                    panel.Children.Add(new Border
-                    {
-                        Margin = new Thickness(0, 0, 0, 7),
-                        Padding = new Thickness(8),
-                        CornerRadius = new CornerRadius(6),
-                        BorderThickness = new Thickness(1),
-                        BorderBrush = Brush("BorderBrush", Brushes.LightGray),
-                        Background = Brush("SurfaceAltBrush", Brushes.WhiteSmoke),
-                        Child = new TextBlock
-                        {
-                            Text = $"{item.State} • {item.Step}\n{item.Detail}",
-                            FontSize = 10.5,
-                            TextWrapping = TextWrapping.Wrap,
-                            Foreground = Brush("TextSecondaryBrush", Brushes.DimGray)
-                        }
-                    });
-                }
-            }
+            _notificationItems = new StackPanel();
+            panel.Children.Add(_notificationItems);
             panel.Children.Add(OpenButton("Open Notification Center", "Notification Center"));
             panel.Children.Add(OpenButton("Open Activity Timeline", "Activity Timeline"));
             return Scroll(panel);
         }
 
-        private UIElement BuildQuickFixContent()
+        private UIElement BuildQuickFixView()
         {
             var panel = BasePanel("QUICK FIX QUEUE");
-            panel.Children.Add(Title(Main.SuggestedChanges.PendingCount > 0
-                ? $"{Main.SuggestedChanges.PendingCount} change(s) need review"
-                : "No pending changes"));
-            panel.Children.Add(Metric("Approved", Main.SuggestedChanges.ApprovedCount));
-            panel.Children.Add(Metric("Ready", Main.ExecutionCenter.ReadyCount));
-            panel.Children.Add(Metric("Failed", Main.ExecutionCenter.FailedCount));
+            _quickTitle = Title(null);
+            _quickApproved = MetricText("Approved", 0);
+            _quickReady = MetricText("Ready", 0);
+            _quickFailed = MetricText("Failed", 0);
+            panel.Children.Add(_quickTitle);
+            panel.Children.Add(Metric(_quickApproved));
+            panel.Children.Add(Metric(_quickReady));
+            panel.Children.Add(Metric(_quickFailed));
             panel.Children.Add(OpenButton("Review changes", "Suggested Changes"));
             panel.Children.Add(OpenButton("Open Execution Center", "Execution Center"));
             return Scroll(panel);
+        }
+
+        private void RefreshJourney()
+        {
+            _journeyTitle.Text = string.IsNullOrWhiteSpace(Main.CurrentJourneyStepTitle)
+                ? "Select or connect a website"
+                : Main.CurrentJourneyStepTitle;
+            _journeyDescription.Text = string.IsNullOrWhiteSpace(Main.CurrentJourneyStepDescription)
+                ? "No details available."
+                : Main.CurrentJourneyStepDescription;
+            var value = Math.Clamp(Main.DashboardJourneyProgress, 0, 100);
+            _journeyProgress.Value = value;
+            _journeyPercent.Text = $"Journey progress: {value}%";
+        }
+
+        private void RefreshAi()
+        {
+            _aiTitle.Text = Main.DashboardAiSuggestions > 0
+                ? $"{Main.DashboardAiSuggestions} AI suggestion(s) available"
+                : "No AI suggestions yet";
+            _aiDescription.Text = Main.DashboardAiSuggestions > 0
+                ? "Review the existing AI recommendations, risk and expected result before approval."
+                : "Synchronize and analyze the website to generate reviewable recommendations.";
+            _aiPending.Text = $"Pending: {Main.SuggestedChanges.PendingCount}";
+            _aiApproved.Text = $"Approved: {Main.SuggestedChanges.ApprovedCount}";
+        }
+
+        private void RefreshOperations()
+        {
+            var running = Main.IsOperationRunning || Main.IsGuidedAnalysisRunning || Main.IsSafeAutopilotRunning;
+            _operationTitle.Text = running ? "Operation running" : "No operation is running";
+            _operationStep.Text = string.IsNullOrWhiteSpace(Main.OperationStep) ? "Idle" : Main.OperationStep;
+            _operationProgress.Value = Math.Clamp(Main.OperationProgress, 0, 100);
+            _operationDetail.Text = string.IsNullOrWhiteSpace(Main.OperationDetail)
+                ? $"Running jobs: {Main.DashboardRunningJobs}"
+                : Main.OperationDetail;
+        }
+
+        private void RefreshNotifications()
+        {
+            if (!_notificationsDirty) return;
+            _notificationsDirty = false;
+            _notificationItems.Children.Clear();
+
+            var history = Main.Operations.History.Take(8).ToArray();
+            if (history.Length == 0)
+            {
+                _notificationItems.Children.Add(Body("No workflow events yet."));
+                return;
+            }
+
+            foreach (var item in history)
+            {
+                _notificationItems.Children.Add(new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 7),
+                    Padding = new Thickness(8),
+                    CornerRadius = new CornerRadius(6),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = Brush("BorderBrush", Brushes.LightGray),
+                    Background = Brush("SurfaceAltBrush", Brushes.WhiteSmoke),
+                    Child = new TextBlock
+                    {
+                        Text = $"{item.State} • {item.Step}\n{item.Detail}",
+                        FontSize = 10.5,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextSecondaryBrush", Brushes.DimGray)
+                    }
+                });
+            }
+        }
+
+        private void RefreshQuickFix()
+        {
+            _quickTitle.Text = Main.SuggestedChanges.PendingCount > 0
+                ? $"{Main.SuggestedChanges.PendingCount} change(s) need review"
+                : "No pending changes";
+            _quickApproved.Text = $"Approved: {Main.SuggestedChanges.ApprovedCount}";
+            _quickReady.Text = $"Ready: {Main.ExecutionCenter.ReadyCount}";
+            _quickFailed.Text = $"Failed: {Main.ExecutionCenter.FailedCount}";
         }
 
         private Button OpenButton(string label, string page)
@@ -442,18 +542,28 @@ internal static class DockedRightSidebarExperience
             Margin = new Thickness(0, 0, 0, 5)
         };
 
-        private static Border Metric(string label, int value) => new()
+        private static ProgressBar Progress() => new()
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Height = 8,
+            Margin = new Thickness(0, 12, 0, 5)
+        };
+
+        private static TextBlock MetricText(string label, int value) => new()
+        {
+            Text = $"{label}: {value}",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brush("TextPrimaryBrush", Brushes.Black)
+        };
+
+        private static Border Metric(TextBlock text) => new()
         {
             Margin = new Thickness(0, 4, 0, 0),
             Padding = new Thickness(8, 6, 8, 6),
             CornerRadius = new CornerRadius(6),
             Background = Brush("SurfaceAltBrush", Brushes.WhiteSmoke),
-            Child = new TextBlock
-            {
-                Text = $"{label}: {value}",
-                FontWeight = FontWeights.SemiBold,
-                Foreground = Brush("TextPrimaryBrush", Brushes.Black)
-            }
+            Child = text
         };
 
         private static ScrollViewer Scroll(UIElement content) => new()
@@ -461,6 +571,16 @@ internal static class DockedRightSidebarExperience
             Content = content,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
+
+        private static string SectionTitle(SidebarSection section) => section switch
+        {
+            SidebarSection.Journey => "Journey",
+            SidebarSection.Ai => "AI Copilot",
+            SidebarSection.Operations => "Operations",
+            SidebarSection.Notifications => "Notifications",
+            SidebarSection.QuickFix => "Quick Fix",
+            _ => "Workspace"
         };
 
         private void OnClosed(object? sender, EventArgs e)
@@ -471,7 +591,7 @@ internal static class DockedRightSidebarExperience
             Main.ExecutionCenter.PropertyChanged -= OnRelatedPropertyChanged;
             Main.SuggestedChanges.Items.CollectionChanged -= OnCollectionChanged;
             Main.ExecutionCenter.Items.CollectionChanged -= OnCollectionChanged;
-            Main.Operations.History.CollectionChanged -= OnCollectionChanged;
+            Main.Operations.History.CollectionChanged -= OnHistoryChanged;
             Main.Operations.Operations.CollectionChanged -= OnCollectionChanged;
             Window.Closed -= OnClosed;
 
@@ -480,6 +600,7 @@ internal static class DockedRightSidebarExperience
                 button.Click -= OnSectionClick;
 
             DetailHost.Children.Clear();
+            _views.Clear();
             if (Host.Parent is Panel parent) parent.Children.Remove(Host);
             Sidebar.Child = null;
             SectionButtons.Clear();
