@@ -1,12 +1,11 @@
 [CmdletBinding()]
 param(
     [string]$RepositoryUrl = "https://github.com/walidatiyaai2025-gif/AIWM.git",
-    [string]$RepositoryFolderName = "AIWM",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
     [switch]$NoRun,
+    [switch]$ResetExistingFolder,
     [switch]$SkipPrerequisiteInstall,
-    [switch]$ResetLocalChanges,
     [switch]$NoPause
 )
 
@@ -21,43 +20,59 @@ $logPath = $null
 $historyLogPath = $null
 
 function Wait-BeforeExit {
-    param([string]$Message = "Press ENTER to close this window...")
-
     if ($NoPause) { return }
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor DarkCyan
-    Write-Host $Message -ForegroundColor Magenta
+    Write-Host "Press ENTER to close this window..." -ForegroundColor Magenta
     Write-Host "============================================================" -ForegroundColor DarkCyan
     try { [void](Read-Host) }
     catch {
         try { [void]$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") }
-        catch { Start-Sleep -Seconds 15 }
+        catch { Start-Sleep -Seconds 20 }
     }
 }
 
-function Resolve-ScriptDirectory {
-    $candidates = @(
-        $PSScriptRoot,
-        (if (-not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
-            Split-Path -Parent $MyInvocation.MyCommand.Path
-        }),
-        (Get-Location).ProviderPath
-    )
+function Resolve-SafePath {
+    param([AllowNull()][AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    $clean = $Path.Trim().Replace('"', '').Replace("'", '')
+    if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+    return [System.IO.Path]::GetFullPath($clean)
+}
 
-    foreach ($candidate in $candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-        $clean = $candidate.Trim().Replace('"', '').Replace("'", '')
-        if ([string]::IsNullOrWhiteSpace($clean)) { continue }
-
-        try { $full = [System.IO.Path]::GetFullPath($clean) }
-        catch { continue }
-
-        if (Test-Path -LiteralPath $full -PathType Container) {
-            return $full
-        }
+function Select-Folder {
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = "Select the folder where AI WordPress Manager will be installed"
+    $dialog.ShowNewFolderButton = $true
+    if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $dialog.SelectedPath
     }
+    return $null
+}
 
-    throw "Could not determine the folder containing the bootstrap script."
+function Ask-InstallPath {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host " AI WordPress Manager - Fresh Install, Build and Run" -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "Repository: $RepositoryUrl" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Enter the exact folder where the repository should be cloned." -ForegroundColor White
+    Write-Host "Example: D:\Projects\AIWM" -ForegroundColor DarkGray
+    Write-Host "Leave it empty to browse for a folder." -ForegroundColor Yellow
+    Write-Host ""
+
+    $inputPath = Read-Host "Install path"
+    $resolved = Resolve-SafePath -Path $inputPath
+    if ($null -eq $resolved) {
+        $selected = Select-Folder
+        $resolved = Resolve-SafePath -Path $selected
+    }
+    if ($null -eq $resolved) {
+        throw "No installation folder was selected."
+    }
+    return $resolved
 }
 
 function Ensure-Directory {
@@ -67,30 +82,17 @@ function Ensure-Directory {
     }
 }
 
-function Test-IsRepositoryRoot {
-    param([Parameter(Mandatory)][string]$Path)
-
-    return (
-        (Test-Path -LiteralPath (Join-Path $Path ".git") -PathType Container) -and
-        (Test-Path -LiteralPath (Join-Path $Path "AIWordPressManager.sln") -PathType Leaf)
-    )
-}
-
 function Initialize-Output {
     param([Parameter(Mandatory)][string]$Root)
-
     $outputRoot = Join-Path $Root "Output"
     $script:latestOutput = Join-Path $outputRoot "Latest"
     $historyRoot = Join-Path $outputRoot "History"
     $script:historyOutput = Join-Path $historyRoot (Get-Date -Format "yyyy-MM-dd_HH-mm-ss")
-
-    foreach ($directory in @($outputRoot, $script:latestOutput, $historyRoot, $script:historyOutput)) {
-        Ensure-Directory -Path $directory
+    foreach ($folder in @($outputRoot, $script:latestOutput, $historyRoot, $script:historyOutput)) {
+        Ensure-Directory -Path $folder
     }
-
     $script:logPath = Join-Path $script:latestOutput "bootstrap-aiwm.log"
     $script:historyLogPath = Join-Path $script:historyOutput "bootstrap-aiwm.log"
-
     $start = "AIWM bootstrap started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     Set-Content -LiteralPath $script:logPath -Value $start -Encoding UTF8
     Set-Content -LiteralPath $script:historyLogPath -Value $start -Encoding UTF8
@@ -98,16 +100,10 @@ function Initialize-Output {
 
 function Write-Log {
     param([Parameter(Mandatory)][string]$Message)
-
     $line = "[$(Get-Date -Format 'HH:mm:ss')] $Message"
     Write-Host $line
-
-    if (-not [string]::IsNullOrWhiteSpace($script:logPath)) {
-        Add-Content -LiteralPath $script:logPath -Value $line -Encoding UTF8
-    }
-    if (-not [string]::IsNullOrWhiteSpace($script:historyLogPath)) {
-        Add-Content -LiteralPath $script:historyLogPath -Value $line -Encoding UTF8
-    }
+    if ($script:logPath) { Add-Content -LiteralPath $script:logPath -Value $line -Encoding UTF8 }
+    if ($script:historyLogPath) { Add-Content -LiteralPath $script:historyLogPath -Value $line -Encoding UTF8 }
 }
 
 function Write-Step {
@@ -117,158 +113,122 @@ function Write-Step {
     Write-Log -Message $Message
 }
 
+function Test-CommandAvailable {
+    param([Parameter(Mandatory)][string]$Name)
+    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
 function Refresh-PathEnvironment {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = "$machinePath;$userPath"
 }
 
-function Test-CommandAvailable {
-    param([Parameter(Mandatory)][string]$Name)
-    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
-}
-
 function Install-WingetPackage {
-    param(
-        [Parameter(Mandatory)][string]$Id,
-        [Parameter(Mandatory)][string]$DisplayName
-    )
-
-    if ($SkipPrerequisiteInstall) {
-        throw "$DisplayName is missing and prerequisite installation was skipped."
-    }
+    param([string]$Id, [string]$DisplayName)
+    if ($SkipPrerequisiteInstall) { throw "$DisplayName is missing and automatic installation was skipped." }
     if (-not (Test-CommandAvailable -Name "winget")) {
-        throw "winget is required to install $DisplayName automatically. Install Microsoft App Installer, then rerun this script."
+        throw "winget is unavailable. Install Microsoft App Installer, then run this script again."
     }
-
     Write-Step "Installing $DisplayName"
     & winget install --id $Id --exact --silent --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install $DisplayName with winget. Exit code: $LASTEXITCODE"
-    }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install $DisplayName. Exit code: $LASTEXITCODE" }
     Refresh-PathEnvironment
 }
 
 function Ensure-Prerequisites {
     Write-Step "Checking prerequisites"
-
     if (-not (Test-CommandAvailable -Name "git")) {
         Install-WingetPackage -Id "Git.Git" -DisplayName "Git for Windows"
     }
     if (-not (Test-CommandAvailable -Name "dotnet")) {
         Install-WingetPackage -Id "Microsoft.DotNet.SDK.8" -DisplayName ".NET 8 SDK"
     }
-
     Refresh-PathEnvironment
-
-    if (-not (Test-CommandAvailable -Name "git")) {
-        throw "Git is still unavailable after prerequisite setup."
-    }
-    if (-not (Test-CommandAvailable -Name "dotnet")) {
-        throw ".NET SDK is still unavailable after prerequisite setup."
-    }
-
-    $sdkList = & dotnet --list-sdks
-    if ($LASTEXITCODE -ne 0 -or -not ($sdkList -match '^8\.')) {
+    if (-not (Test-CommandAvailable -Name "git")) { throw "Git is not available." }
+    if (-not (Test-CommandAvailable -Name "dotnet")) { throw ".NET is not available." }
+    $sdks = & dotnet --list-sdks
+    if ($LASTEXITCODE -ne 0 -or -not ($sdks -match '^8\.')) {
         Install-WingetPackage -Id "Microsoft.DotNet.SDK.8" -DisplayName ".NET 8 SDK"
-        $sdkList = & dotnet --list-sdks
-        if (-not ($sdkList -match '^8\.')) {
-            throw ".NET 8 SDK is required but was not detected."
-        }
+        $sdks = & dotnet --list-sdks
+        if (-not ($sdks -match '^8\.')) { throw ".NET 8 SDK was not detected after installation." }
     }
-
     Write-Log -Message "Git: $((& git --version) -join ' ')"
-    Write-Log -Message ".NET SDKs: $($sdkList -join '; ')"
+    Write-Log -Message ".NET SDKs: $($sdks -join '; ')"
 }
 
 function Invoke-LoggedCommand {
-    param(
-        [Parameter(Mandatory)][string]$Command,
-        [Parameter()][string[]]$Arguments = @(),
-        [switch]$IgnoreExitCode
-    )
-
+    param([string]$Command, [string[]]$Arguments = @(), [switch]$IgnoreExitCode)
     Write-Log -Message ("RUN: {0} {1}" -f $Command, ($Arguments -join ' '))
     $output = & $Command @Arguments 2>&1
     $code = $LASTEXITCODE
     $output | Out-Host
-
     if ($null -ne $output) {
         $output | Add-Content -LiteralPath $script:logPath -Encoding UTF8
         $output | Add-Content -LiteralPath $script:historyLogPath -Encoding UTF8
     }
-    if (-not $IgnoreExitCode -and $code -ne 0) {
-        throw "$Command failed with exit code $code."
-    }
+    if (-not $IgnoreExitCode -and $code -ne 0) { throw "$Command failed with exit code $code." }
     return $code
+}
+
+function Prepare-TargetFolder {
+    param([Parameter(Mandatory)][string]$Target)
+    if (-not (Test-Path -LiteralPath $Target)) {
+        New-Item -ItemType Directory -Path $Target -Force | Out-Null
+        return
+    }
+
+    $items = @(Get-ChildItem -LiteralPath $Target -Force -ErrorAction SilentlyContinue)
+    if ($items.Count -eq 0) { return }
+
+    if (Test-Path -LiteralPath (Join-Path $Target ".git") -PathType Container) {
+        Write-Host "Existing Git repository found. It will be updated." -ForegroundColor Yellow
+        return
+    }
+
+    if (-not $ResetExistingFolder) {
+        Write-Host ""
+        Write-Host "The selected folder is not empty and is not a Git repository:" -ForegroundColor Yellow
+        Write-Host $Target -ForegroundColor Cyan
+        $answer = Read-Host "Delete its contents and continue? Type YES to confirm"
+        if ($answer -cne "YES") { throw "Installation cancelled to protect existing files." }
+    }
+
+    Write-Step "Clearing selected installation folder"
+    Get-ChildItem -LiteralPath $Target -Force | Remove-Item -Recurse -Force
+}
+
+function Clone-Or-Update {
+    if (Test-Path -LiteralPath (Join-Path $script:projectRoot ".git") -PathType Container) {
+        Set-Location -LiteralPath $script:projectRoot
+        Write-Step "Updating existing repository"
+        Invoke-LoggedCommand -Command "git" -Arguments @("fetch", "origin", "--prune") | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main") | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("reset", "--hard", "origin/main") | Out-Null
+        Invoke-LoggedCommand -Command "git" -Arguments @("clean", "-fd") | Out-Null
+    }
+    else {
+        Write-Step "Cloning repository"
+        $parent = Split-Path -Parent $script:projectRoot
+        Ensure-Directory -Path $parent
+        Invoke-LoggedCommand -Command "git" -Arguments @("clone", $RepositoryUrl, $script:projectRoot) | Out-Null
+        Set-Location -LiteralPath $script:projectRoot
+    }
 }
 
 function Stop-RunningApp {
     Write-Step "Stopping running AIWM processes"
-
-    Get-Process -Name "AIWordPressManager.Desktop" -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-
+    Get-Process -Name "AIWordPressManager.Desktop" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe'" -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -match "AIWordPressManager" -or
-            $_.CommandLine -match "AIWordPressManager.Desktop.csproj"
-        } |
-        ForEach-Object {
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
-
+        Where-Object { $_.CommandLine -match "AIWordPressManager" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 700
 }
 
-function Resolve-Or-CloneRepository {
-    param([Parameter(Mandatory)][string]$ScriptDirectory)
-
-    if (Test-IsRepositoryRoot -Path $ScriptDirectory) {
-        $script:projectRoot = $ScriptDirectory
-        Write-Step "Using repository in the script folder"
-        return
-    }
-
-    $target = Join-Path $ScriptDirectory $RepositoryFolderName
-    if (-not (Test-Path -LiteralPath $target -PathType Container)) {
-        Write-Step "Cloning AIWM beside the bootstrap script"
-        Invoke-LoggedCommand -Command "git" -Arguments @("clone", $RepositoryUrl, $target)
-    }
-    elseif (-not (Test-IsRepositoryRoot -Path $target)) {
-        throw "The folder exists but is not the expected AIWM repository: $target"
-    }
-
-    $script:projectRoot = $target
-}
-
-function Update-Repository {
-    Set-Location -LiteralPath $script:projectRoot
-
-    Write-Step "Updating repository"
-    Invoke-LoggedCommand -Command "git" -Arguments @("fetch", "origin", "--prune")
-
-    if ($ResetLocalChanges) {
-        Write-Step "Resetting local changes to origin/main"
-        Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main")
-        Invoke-LoggedCommand -Command "git" -Arguments @("reset", "--hard", "origin/main")
-        Invoke-LoggedCommand -Command "git" -Arguments @("clean", "-fd")
-        return
-    }
-
-    $changes = & git status --porcelain
-    if ($LASTEXITCODE -ne 0) { throw "git status failed." }
-    if ($changes) {
-        Write-Host "Local changes detected:" -ForegroundColor Yellow
-        $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
-        throw "Commit or stash local changes, or rerun with -ResetLocalChanges."
-    }
-
-    Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main")
-    Invoke-LoggedCommand -Command "git" -Arguments @("pull", "--ff-only", "origin", "main")
-}
-
 function Clean-Restore-Build {
+    $solution = Join-Path $script:projectRoot "AIWordPressManager.sln"
+    if (-not (Test-Path -LiteralPath $solution -PathType Leaf)) { throw "Solution not found: $solution" }
+
     Write-Step "Stopping .NET build servers"
     Invoke-LoggedCommand -Command "dotnet" -Arguments @("build-server", "shutdown") -IgnoreExitCode | Out-Null
 
@@ -277,44 +237,24 @@ function Clean-Restore-Build {
         Where-Object { $_.Name -in @("bin", "obj") } |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-    $solutionPath = Join-Path $script:projectRoot "AIWordPressManager.sln"
-    if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
-        throw "Solution file was not found: $solutionPath"
-    }
-
     Write-Step "Restoring NuGet packages"
-    Invoke-LoggedCommand -Command "dotnet" -Arguments @("restore", $solutionPath, "--force")
+    Invoke-LoggedCommand -Command "dotnet" -Arguments @("restore", $solution, "--force") | Out-Null
 
     Write-Step "Building $Configuration configuration"
-    Invoke-LoggedCommand -Command "dotnet" -Arguments @("build", $solutionPath, "-c", $Configuration, "--no-restore")
+    Invoke-LoggedCommand -Command "dotnet" -Arguments @("build", $solution, "-c", $Configuration, "--no-restore") | Out-Null
 }
 
-function Run-Application {
-    if ($NoRun) {
-        Write-Step "Build completed; application launch skipped"
-        return
-    }
-
+function Run-App {
+    if ($NoRun) { return }
     $desktopProject = Join-Path $script:projectRoot "src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj"
-    if (-not (Test-Path -LiteralPath $desktopProject -PathType Leaf)) {
-        throw "Desktop project was not found: $desktopProject"
-    }
-
+    if (-not (Test-Path -LiteralPath $desktopProject -PathType Leaf)) { throw "Desktop project not found: $desktopProject" }
     Write-Step "Running AI WordPress Manager"
-    Invoke-LoggedCommand -Command "dotnet" -Arguments @(
-        "run", "--no-build", "-c", $Configuration,
-        "--project", $desktopProject
-    )
+    Invoke-LoggedCommand -Command "dotnet" -Arguments @("run", "--no-build", "-c", $Configuration, "--project", $desktopProject) | Out-Null
 }
 
 function Complete-Run {
-    param(
-        [Parameter(Mandatory)][string]$Status,
-        [Parameter(Mandatory)][string]$Message
-    )
-
-    if ([string]::IsNullOrWhiteSpace($script:latestOutput)) { return }
-
+    param([string]$Status, [string]$Message)
+    if (-not $script:latestOutput) { return }
     $summaryPath = Join-Path $script:latestOutput "Summary.txt"
     @(
         "AI WordPress Manager Bootstrap"
@@ -326,36 +266,31 @@ function Complete-Run {
         "Message: $Message"
         "Log: $script:logPath"
     ) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-
-    if (-not [string]::IsNullOrWhiteSpace($script:historyOutput)) {
-        Copy-Item -LiteralPath $summaryPath -Destination (Join-Path $script:historyOutput "Summary.txt") -Force
-    }
-
+    Copy-Item -LiteralPath $summaryPath -Destination (Join-Path $script:historyOutput "Summary.txt") -Force
     try { Start-Process explorer.exe -ArgumentList $script:latestOutput | Out-Null }
     catch { Write-Host "Output folder: $script:latestOutput" -ForegroundColor Yellow }
 }
 
 try {
-    $scriptDirectory = Resolve-ScriptDirectory
-
-    # Before cloning, logs are written beside the bootstrap script.
-    Initialize-Output -Root $scriptDirectory
+    $script:projectRoot = Ask-InstallPath
+    Prepare-TargetFolder -Target $script:projectRoot
+    Initialize-Output -Root $script:projectRoot
     Ensure-Prerequisites
-    Resolve-Or-CloneRepository -ScriptDirectory $scriptDirectory
-    Update-Repository
-
-    # After resolving the repository, all final logs are written inside it.
+    Clone-Or-Update
     Initialize-Output -Root $script:projectRoot
     Stop-RunningApp
     Clean-Restore-Build
-    Run-Application
+    Run-App
 
     $commit = (& git -C $script:projectRoot rev-parse --short HEAD).Trim()
-    Complete-Run -Status "SUCCESS" -Message "Bootstrap, build, and run completed at commit $commit."
+    Complete-Run -Status "SUCCESS" -Message "Clone, build, and run completed at commit $commit."
 
     Write-Host ""
-    Write-Host "SUCCESS: AIWM is ready." -ForegroundColor Green
-    Write-Host "Project: $script:projectRoot" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host " SUCCESS" -ForegroundColor Green
+    Write-Host " Project: $script:projectRoot" -ForegroundColor Cyan
+    Write-Host " Output : $script:latestOutput" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Green
 }
 catch {
     $exitCode = 1
