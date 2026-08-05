@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title AI WordPress Manager - Fresh Install, Build and Run
+title AI WordPress Manager - Current Folder Bootstrap
 
 set "SCRIPT_DIR=%~dp0"
 set "PS_SCRIPT=%SCRIPT_DIR%Bootstrap-AIWM.ps1"
@@ -14,10 +14,13 @@ if not exist "%PS_SCRIPT%" (
     exit /b 1
 )
 
+cd /d "%SCRIPT_DIR%"
+
 echo.
 echo ============================================================
-echo  AI WordPress Manager - Fresh Install, Build and Run
+echo  AI WordPress Manager - Current Folder Bootstrap
 echo ============================================================
+echo Working folder: %CD%
 echo.
 
 powershell.exe -NoLogo -NoProfile -NoExit -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
