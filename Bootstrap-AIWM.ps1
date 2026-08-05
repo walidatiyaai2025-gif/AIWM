@@ -1,6 +1,5 @@
 [CmdletBinding()]
 param(
-    [string]$InstallRoot = "C:\Apps",
     [string]$RepositoryUrl = "https://github.com/walidatiyaai2025-gif/AIWM.git",
     [string]$RepositoryFolderName = "AIWM",
     [ValidateSet("Debug", "Release")]
@@ -36,14 +35,29 @@ function Wait-BeforeExit {
     }
 }
 
-function Resolve-SafePath {
-    param([Parameter(Mandatory)][string]$Path)
+function Resolve-ScriptDirectory {
+    $candidates = @(
+        $PSScriptRoot,
+        (if (-not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+            Split-Path -Parent $MyInvocation.MyCommand.Path
+        }),
+        (Get-Location).ProviderPath
+    )
 
-    $clean = $Path.Trim().Replace('"', '').Replace("'", '')
-    if ([string]::IsNullOrWhiteSpace($clean)) {
-        throw "A required path is empty."
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $clean = $candidate.Trim().Replace('"', '').Replace("'", '')
+        if ([string]::IsNullOrWhiteSpace($clean)) { continue }
+
+        try { $full = [System.IO.Path]::GetFullPath($clean) }
+        catch { continue }
+
+        if (Test-Path -LiteralPath $full -PathType Container) {
+            return $full
+        }
     }
-    return [System.IO.Path]::GetFullPath($clean)
+
+    throw "Could not determine the folder containing the bootstrap script."
 }
 
 function Ensure-Directory {
@@ -51,6 +65,15 @@ function Ensure-Directory {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
     }
+}
+
+function Test-IsRepositoryRoot {
+    param([Parameter(Mandatory)][string]$Path)
+
+    return (
+        (Test-Path -LiteralPath (Join-Path $Path ".git") -PathType Container) -and
+        (Test-Path -LiteralPath (Join-Path $Path "AIWordPressManager.sln") -PathType Leaf)
+    )
 }
 
 function Initialize-Output {
@@ -78,6 +101,7 @@ function Write-Log {
 
     $line = "[$(Get-Date -Format 'HH:mm:ss')] $Message"
     Write-Host $line
+
     if (-not [string]::IsNullOrWhiteSpace($script:logPath)) {
         Add-Content -LiteralPath $script:logPath -Value $line -Encoding UTF8
     }
@@ -131,7 +155,6 @@ function Ensure-Prerequisites {
     if (-not (Test-CommandAvailable -Name "git")) {
         Install-WingetPackage -Id "Git.Git" -DisplayName "Git for Windows"
     }
-
     if (-not (Test-CommandAvailable -Name "dotnet")) {
         Install-WingetPackage -Id "Microsoft.DotNet.SDK.8" -DisplayName ".NET 8 SDK"
     }
@@ -169,6 +192,7 @@ function Invoke-LoggedCommand {
     $output = & $Command @Arguments 2>&1
     $code = $LASTEXITCODE
     $output | Out-Host
+
     if ($null -ne $output) {
         $output | Add-Content -LiteralPath $script:logPath -Encoding UTF8
         $output | Add-Content -LiteralPath $script:historyLogPath -Encoding UTF8
@@ -197,20 +221,28 @@ function Stop-RunningApp {
     Start-Sleep -Milliseconds 700
 }
 
-function Clone-Or-UpdateRepository {
-    $installRootFull = Resolve-SafePath -Path $InstallRoot
-    Ensure-Directory -Path $installRootFull
+function Resolve-Or-CloneRepository {
+    param([Parameter(Mandatory)][string]$ScriptDirectory)
 
-    $script:projectRoot = Join-Path $installRootFull $RepositoryFolderName
-
-    if (-not (Test-Path -LiteralPath $script:projectRoot -PathType Container)) {
-        Write-Step "Cloning AIWM repository"
-        Invoke-LoggedCommand -Command "git" -Arguments @("clone", $RepositoryUrl, $script:projectRoot)
-    }
-    elseif (-not (Test-Path -LiteralPath (Join-Path $script:projectRoot ".git") -PathType Container)) {
-        throw "The target folder exists but is not a Git repository: $script:projectRoot"
+    if (Test-IsRepositoryRoot -Path $ScriptDirectory) {
+        $script:projectRoot = $ScriptDirectory
+        Write-Step "Using repository in the script folder"
+        return
     }
 
+    $target = Join-Path $ScriptDirectory $RepositoryFolderName
+    if (-not (Test-Path -LiteralPath $target -PathType Container)) {
+        Write-Step "Cloning AIWM beside the bootstrap script"
+        Invoke-LoggedCommand -Command "git" -Arguments @("clone", $RepositoryUrl, $target)
+    }
+    elseif (-not (Test-IsRepositoryRoot -Path $target)) {
+        throw "The folder exists but is not the expected AIWM repository: $target"
+    }
+
+    $script:projectRoot = $target
+}
+
+function Update-Repository {
     Set-Location -LiteralPath $script:projectRoot
 
     Write-Step "Updating repository"
@@ -221,18 +253,19 @@ function Clone-Or-UpdateRepository {
         Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main")
         Invoke-LoggedCommand -Command "git" -Arguments @("reset", "--hard", "origin/main")
         Invoke-LoggedCommand -Command "git" -Arguments @("clean", "-fd")
+        return
     }
-    else {
-        $changes = & git status --porcelain
-        if ($LASTEXITCODE -ne 0) { throw "git status failed." }
-        if ($changes) {
-            Write-Host "Local changes detected:" -ForegroundColor Yellow
-            $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
-            throw "Commit or stash local changes, or rerun with -ResetLocalChanges."
-        }
-        Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main")
-        Invoke-LoggedCommand -Command "git" -Arguments @("pull", "--ff-only", "origin", "main")
+
+    $changes = & git status --porcelain
+    if ($LASTEXITCODE -ne 0) { throw "git status failed." }
+    if ($changes) {
+        Write-Host "Local changes detected:" -ForegroundColor Yellow
+        $changes | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        throw "Commit or stash local changes, or rerun with -ResetLocalChanges."
     }
+
+    Invoke-LoggedCommand -Command "git" -Arguments @("checkout", "main")
+    Invoke-LoggedCommand -Command "git" -Arguments @("pull", "--ff-only", "origin", "main")
 }
 
 function Clean-Restore-Build {
@@ -280,36 +313,38 @@ function Complete-Run {
         [Parameter(Mandatory)][string]$Message
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($script:latestOutput)) {
-        $summaryPath = Join-Path $script:latestOutput "Summary.txt"
-        @(
-            "AI WordPress Manager Bootstrap"
-            "Status: $Status"
-            "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-            "Repository: $RepositoryUrl"
-            "Project: $script:projectRoot"
-            "Configuration: $Configuration"
-            "Message: $Message"
-            "Log: $script:logPath"
-        ) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+    if ([string]::IsNullOrWhiteSpace($script:latestOutput)) { return }
 
-        if (-not [string]::IsNullOrWhiteSpace($script:historyOutput)) {
-            Copy-Item -LiteralPath $summaryPath -Destination (Join-Path $script:historyOutput "Summary.txt") -Force
-        }
+    $summaryPath = Join-Path $script:latestOutput "Summary.txt"
+    @(
+        "AI WordPress Manager Bootstrap"
+        "Status: $Status"
+        "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        "Repository: $RepositoryUrl"
+        "Project: $script:projectRoot"
+        "Configuration: $Configuration"
+        "Message: $Message"
+        "Log: $script:logPath"
+    ) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
-        try { Start-Process explorer.exe -ArgumentList $script:latestOutput | Out-Null }
-        catch { Write-Host "Output folder: $script:latestOutput" -ForegroundColor Yellow }
+    if (-not [string]::IsNullOrWhiteSpace($script:historyOutput)) {
+        Copy-Item -LiteralPath $summaryPath -Destination (Join-Path $script:historyOutput "Summary.txt") -Force
     }
+
+    try { Start-Process explorer.exe -ArgumentList $script:latestOutput | Out-Null }
+    catch { Write-Host "Output folder: $script:latestOutput" -ForegroundColor Yellow }
 }
 
 try {
-    $resolvedInstallRoot = Resolve-SafePath -Path $InstallRoot
-    Ensure-Directory -Path $resolvedInstallRoot
+    $scriptDirectory = Resolve-ScriptDirectory
 
-    # Create bootstrap logs before cloning, then recreate them inside the repository after clone/update.
-    Initialize-Output -Root $resolvedInstallRoot
+    # Before cloning, logs are written beside the bootstrap script.
+    Initialize-Output -Root $scriptDirectory
     Ensure-Prerequisites
-    Clone-Or-UpdateRepository
+    Resolve-Or-CloneRepository -ScriptDirectory $scriptDirectory
+    Update-Repository
+
+    # After resolving the repository, all final logs are written inside it.
     Initialize-Output -Root $script:projectRoot
     Stop-RunningApp
     Clean-Restore-Build
@@ -317,6 +352,7 @@ try {
 
     $commit = (& git -C $script:projectRoot rev-parse --short HEAD).Trim()
     Complete-Run -Status "SUCCESS" -Message "Bootstrap, build, and run completed at commit $commit."
+
     Write-Host ""
     Write-Host "SUCCESS: AIWM is ready." -ForegroundColor Green
     Write-Host "Project: $script:projectRoot" -ForegroundColor Cyan
