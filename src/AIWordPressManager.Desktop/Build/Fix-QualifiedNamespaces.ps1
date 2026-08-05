@@ -64,6 +64,11 @@ Update-FileText -Path $demoDataExperience -SuccessMessage 'Normalized in-app dem
     [System.Text.RegularExpressions.Regex]::Replace($content, $pattern, $replacement)
 }
 
+Update-FileText -Path $demoDataExperience -SuccessMessage 'Normalized escaped TimeSpan formats in DemoDataInAppExperience.cs.' -Transform {
+    param($content)
+    $content.Replace('hh\:mm\:ss', 'hh\\:mm\\:ss')
+}
+
 $appCodeBehind = Join-Path $ProjectDirectory 'App.xaml.cs'
 Update-FileText -Path $appCodeBehind -SuccessMessage 'Connected MainWindow to the active SQLite database path for demo data.' -Transform {
     param($content)
