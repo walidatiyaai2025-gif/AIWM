@@ -71,7 +71,7 @@ public partial class App : System.Windows.Application
             progress.Report(StartupProgress.Create(48, "Signed in", $"Welcome {SystemSecuritySession.CurrentDisplayName} ({SystemSecuritySession.CurrentRoleName})"));
 
             var mainViewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
-            await mainViewModel.InitializeAsync(progress);
+            await mainViewModel.InitializeFastAsync(progress);
 
             progress.Report(StartupProgress.Create(96, "Creating main window", "Applying theme, navigation, and the active site context"));
             MainWindow = _host.Services.GetRequiredService<MainWindow>();
