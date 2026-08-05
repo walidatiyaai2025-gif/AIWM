@@ -1,33 +1,57 @@
-using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Threading;
-using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
-/// Legacy floating workspaces are intentionally disabled. Analysis tools remain
-/// available through their dedicated pages, contextual actions and AI Command Center.
-/// This guard prevents old feature surfaces from reintroducing overlapping panels.
+/// Retires legacy floating workspaces after their useful data and actions were moved
+/// into the docked right sidebar or dedicated pages. Elements are suppressed as they
+/// load, so no periodic timer or repeated full visual-tree scan is required.
 /// </summary>
 internal static class FloatingWorkspaceManager
 {
     private static readonly ConditionalWeakTable<MainWindow, object> Attached = new();
 
-    private static readonly string[] ManagedTags =
-    [
+    private static readonly HashSet<string> ManagedTags = new(StringComparer.OrdinalIgnoreCase)
+    {
         "PriorityResolutionPanel",
         "ReviewWorkbenchesPanel",
         "ContentQualityBatchPanel",
         "QuickFixJourneyPanel",
         "MediaAnalysisPanel",
         "AiCopilotInboxPanel",
+        "NotificationPanel",
+        "NotificationToggle",
+        "LiveOperationsPanel",
+        "JourneyCompletionPanel",
+        "RealContentAnalysisPanel",
+        "ApprovedChangesPanel",
         "FloatingWorkspaceScrim",
         "FloatingWorkspaceLauncher"
+    };
+
+    private static readonly string[] ManagedTagFragments =
+    [
+        "AiCopilotInbox",
+        "QuickFix",
+        "JourneyCompletion",
+        "PriorityResolution",
+        "ReviewWorkbench",
+        "FloatingWorkspace",
+        "LiveOperations",
+        "ApprovedChanges"
     ];
+
+    private static readonly HashSet<string> AllowedDockedTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DockedRightSidebar",
+        "DockedWorkspaceHost",
+        "DockedWorkspaceContent",
+        "DockedExecutionNotice",
+        "CompleteJourneyCenter",
+        "PrimaryWorkActionBar"
+    };
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -35,58 +59,50 @@ internal static class FloatingWorkspaceManager
         EventManager.RegisterClassHandler(
             typeof(MainWindow),
             FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnLoaded),
+            new RoutedEventHandler(OnMainWindowLoaded),
+            true);
+
+        EventManager.RegisterClassHandler(
+            typeof(FrameworkElement),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnElementLoaded),
             true);
     }
 
-    private static void OnLoaded(object sender, RoutedEventArgs e)
+    private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
     {
         if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
         if (Attached.TryGetValue(window, out _)) return;
-        if (window.Content is not Grid root || window.DataContext is not MainWindowViewModel main) return;
 
         Attached.Add(window, new object());
-
-        void ApplyAtIdle() => window.Dispatcher.BeginInvoke(
-            DispatcherPriority.ContextIdle,
-            new Action(() => SuppressLegacyPanels(root)));
-
-        PropertyChangedEventHandler pageChanged = (_, args) =>
-        {
-            if (args.PropertyName == nameof(MainWindowViewModel.CurrentPage))
-                ApplyAtIdle();
-        };
-
-        main.PropertyChanged += pageChanged;
-        window.Closed += (_, _) => main.PropertyChanged -= pageChanged;
-
-        ApplyAtIdle();
     }
 
-    private static void SuppressLegacyPanels(DependencyObject root)
+    private static void OnElementLoaded(object sender, RoutedEventArgs e)
     {
-        foreach (var tag in ManagedTags)
-        {
-            foreach (var element in FindAllByTag(root, tag))
-            {
-                element.Visibility = Visibility.Collapsed;
-                element.IsHitTestVisible = false;
-                element.Focusable = false;
-                Panel.SetZIndex(element, -1000);
-            }
-        }
+        if (e.OriginalSource is not FrameworkElement element) return;
+        if (element is MainWindow) return;
+        if (Window.GetWindow(element) is not MainWindow window || !Attached.TryGetValue(window, out _)) return;
+        if (!ShouldSuppress(element)) return;
+
+        Suppress(element);
     }
 
-    private static IEnumerable<FrameworkElement> FindAllByTag(DependencyObject root, string tag)
+    private static bool ShouldSuppress(FrameworkElement element)
     {
-        if (root is FrameworkElement element && Equals(element.Tag, tag))
-            yield return element;
+        var tag = element.Tag?.ToString();
+        if (string.IsNullOrWhiteSpace(tag)) return false;
+        if (AllowedDockedTags.Contains(tag)) return false;
+        if (ManagedTags.Contains(tag)) return true;
 
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            foreach (var nested in FindAllByTag(child, tag))
-                yield return nested;
-        }
+        return ManagedTagFragments.Any(fragment =>
+            tag.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void Suppress(FrameworkElement element)
+    {
+        element.Visibility = Visibility.Collapsed;
+        element.IsHitTestVisible = false;
+        element.Focusable = false;
+        Panel.SetZIndex(element, -1000);
     }
 }
