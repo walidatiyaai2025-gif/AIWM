@@ -11,7 +11,6 @@ Set-StrictMode -Version Latest
 
 function Wait-BeforeExit {
     param([string]$Message = "Press ENTER to close this window...")
-
     if ($NoPause) { return }
 
     Write-Host ""
@@ -19,96 +18,122 @@ function Wait-BeforeExit {
     Write-Host $Message -ForegroundColor Magenta
     Write-Host "==============================================" -ForegroundColor DarkCyan
 
-    try {
-        [void](Read-Host)
-    }
+    try { [void](Read-Host) }
     catch {
         try { [void]$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") }
         catch { Start-Sleep -Seconds 15 }
     }
 }
 
-function Resolve-ExistingProjectRoot {
+function Resolve-ProjectRoot {
     param([AllowNull()][AllowEmptyString()][string]$RequestedPath)
 
-    $candidates = [System.Collections.Generic.List[string]]::new()
-
-    if (-not [string]::IsNullOrWhiteSpace($RequestedPath)) {
-        $candidates.Add($RequestedPath)
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-        $candidates.Add($PSScriptRoot)
-    }
-
-    $scriptFile = $MyInvocation.ScriptName
-    if (-not [string]::IsNullOrWhiteSpace($scriptFile)) {
-        $scriptDirectory = Split-Path -Parent $scriptFile
-        if (-not [string]::IsNullOrWhiteSpace($scriptDirectory)) {
-            $candidates.Add($scriptDirectory)
-        }
-    }
-
-    $currentDirectory = (Get-Location).ProviderPath
-    if (-not [string]::IsNullOrWhiteSpace($currentDirectory)) {
-        $candidates.Add($currentDirectory)
-    }
+    $candidates = @(
+        $RequestedPath,
+        $PSScriptRoot,
+        (Split-Path -Parent $MyInvocation.ScriptName),
+        (Get-Location).ProviderPath
+    )
 
     foreach ($candidate in $candidates) {
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-
         $clean = $candidate.Trim().Trim('"').Trim("'")
         if ([string]::IsNullOrWhiteSpace($clean)) { continue }
 
-        try {
-            $full = [System.IO.Path]::GetFullPath($clean)
-        }
-        catch {
-            continue
-        }
+        try { $full = [System.IO.Path]::GetFullPath($clean) }
+        catch { continue }
 
         if (Test-Path -LiteralPath $full -PathType Container) {
             return $full
         }
     }
 
-    throw "Could not resolve the project root from ProjectPath, PSScriptRoot, script location, or current directory."
+    throw "Could not resolve the project root."
+}
+
+function Initialize-OutputContext {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$ScriptName
+    )
+
+    $outputRoot = Join-Path $Root "Output"
+    $latest = Join-Path $outputRoot "Latest"
+    $historyRoot = Join-Path $outputRoot "History"
+    $history = Join-Path $historyRoot (Get-Date -Format "yyyy-MM-dd_HH-mm-ss")
+
+    foreach ($folder in @($outputRoot, $latest, $historyRoot, $history)) {
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    }
+
+    $safeName = [System.IO.Path]::GetFileNameWithoutExtension($ScriptName)
+
+    [pscustomobject]@{
+        ProjectRoot = $Root
+        LatestOutput = $latest
+        HistoryOutput = $history
+        LogPath = Join-Path $latest "$safeName.log"
+        HistoryLogPath = Join-Path $history "$safeName.log"
+        SummaryPath = Join-Path $latest "Summary.txt"
+    }
+}
+
+function Add-Log {
+    param(
+        [Parameter(Mandatory)]$Context,
+        [Parameter(Mandatory)][string]$Message
+    )
+
+    Add-Content -LiteralPath $Context.LogPath -Value $Message -Encoding UTF8
+    Add-Content -LiteralPath $Context.HistoryLogPath -Value $Message -Encoding UTF8
+}
+
+function Complete-Output {
+    param(
+        [Parameter(Mandatory)]$Context,
+        [Parameter(Mandatory)][string]$Status,
+        [Parameter(Mandatory)][string]$Message
+    )
+
+    @(
+        "AI WordPress Manager"
+        "Status: $Status"
+        "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        "Project: $($Context.ProjectRoot)"
+        "Message: $Message"
+        "Latest output: $($Context.LatestOutput)"
+        "History output: $($Context.HistoryOutput)"
+    ) | Set-Content -LiteralPath $Context.SummaryPath -Encoding UTF8
+
+    Copy-Item -LiteralPath $Context.SummaryPath `
+        -Destination (Join-Path $Context.HistoryOutput "Summary.txt") `
+        -Force
+
+    try {
+        Start-Process explorer.exe -ArgumentList ('"{0}"' -f $Context.LatestOutput) | Out-Null
+    }
+    catch {
+        Write-Host "Output folder: $($Context.LatestOutput)" -ForegroundColor Yellow
+    }
 }
 
 $exitCode = 0
 $context = $null
-$latestOutput = $null
-$reportPath = $null
 
 try {
-    $resolvedRoot = Resolve-ExistingProjectRoot -RequestedPath $ProjectPath
+    $root = Resolve-ProjectRoot -RequestedPath $ProjectPath
+    $context = Initialize-OutputContext -Root $root -ScriptName $MyInvocation.MyCommand.Name
 
-    $commonPath = Join-Path $resolvedRoot "Build\RootScript.Common.ps1"
-    if (-not (Test-Path -LiteralPath $commonPath -PathType Leaf)) {
-        throw "Shared root-script helper was not found: $commonPath"
-    }
-
-    . $commonPath
-
-    $context = Initialize-AiwmScriptOutput `
-        -ProjectRoot $resolvedRoot `
-        -ScriptName "Validate-Root-PowerShell-Paths.ps1"
-
-    $latestOutput = $context.LatestOutput
-    $reportPath = Join-Path $latestOutput "Root-PowerShell-Path-Audit.md"
+    $reportPath = Join-Path $context.LatestOutput "Root-PowerShell-Path-Audit.md"
     $historyReportPath = Join-Path $context.HistoryOutput "Root-PowerShell-Path-Audit.md"
 
     Write-Host ""
     Write-Host "Validating root PowerShell scripts..." -ForegroundColor Cyan
-    Write-Host "Project: $($context.ProjectRoot)" -ForegroundColor DarkGray
+    Write-Host "Project: $root" -ForegroundColor DarkGray
     Write-Host ""
 
     $scripts = @(
-        Get-ChildItem `
-            -LiteralPath $context.ProjectRoot `
-            -File `
-            -Filter "*.ps1" `
-            -ErrorAction Stop |
+        Get-ChildItem -LiteralPath $root -File -Filter "*.ps1" -ErrorAction Stop |
         Sort-Object Name
     )
 
@@ -122,12 +147,11 @@ try {
         if ($content -match '\$ProjectPath\s*\+') {
             $issues.Add("Manual concatenation with `$ProjectPath; use Join-Path.")
         }
-        if ($content -match 'Add-Content\s+-Path\s+\$LogPath' -and
-            $content -notmatch 'Resolve-SafePath|Resolve-AiwmSafePath|Initialize-AiwmScriptOutput') {
-            $issues.Add("Log path is written without explicit path sanitization.")
+        if ($content -match 'Add-Content\s+-Path\s+\$LogPath') {
+            $issues.Add("Use -LiteralPath and sanitize LogPath before writing.")
         }
         if ($content -match '\$LogPath\s*=\s*"\$[^\r\n]+\\') {
-            $issues.Add("Log path is built with string interpolation instead of Join-Path.")
+            $issues.Add("LogPath is built with interpolation instead of Join-Path.")
         }
 
         $status = if ($issues.Count -eq 0) { "PASS" } else { "REVIEW" }
@@ -157,7 +181,7 @@ try {
     $lines.Add("# Root PowerShell Path Audit")
     $lines.Add("")
     $lines.Add("- Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
-    $lines.Add("- Project: $($context.ProjectRoot)")
+    $lines.Add("- Project: $root")
     $lines.Add("- Scripts checked: $($results.Count)")
     $lines.Add("- Passed: $passCount")
     $lines.Add("- Requiring review: $reviewCount")
@@ -166,23 +190,19 @@ try {
     $lines.Add("|---|---|---|")
 
     foreach ($result in $results) {
-        $findings = $result.Issues.Replace("|", "\|")
-        $lines.Add("| $($result.Name) | $($result.Status) | $findings |")
+        $lines.Add("| $($result.Name) | $($result.Status) | $($result.Issues.Replace('|','\|')) |")
     }
 
     Set-Content -LiteralPath $reportPath -Value $lines -Encoding UTF8
     Copy-Item -LiteralPath $reportPath -Destination $historyReportPath -Force
 
-    Add-AiwmLog -Context $context -Message (
+    Add-Log -Context $context -Message (
         "Checked {0} root scripts; {1} passed and {2} require review." -f `
         $results.Count, $passCount, $reviewCount
     )
 
     $status = if ($reviewCount -eq 0) { "SUCCESS" } else { "REVIEW" }
-    Complete-AiwmScriptOutput `
-        -Context $context `
-        -Status $status `
-        -Message "Root PowerShell path audit completed."
+    Complete-Output -Context $context -Status $status -Message "Root PowerShell path audit completed."
 
     Write-Host ""
     Write-Host "==============================================" -ForegroundColor Cyan
@@ -196,36 +216,32 @@ try {
 }
 catch {
     $exitCode = 1
-    $errorMessage = $_.Exception.Message
+    $message = $_.Exception.Message
 
     Write-Host ""
-    Write-Host "[ERROR] $errorMessage" -ForegroundColor Red
+    Write-Host "[ERROR] $message" -ForegroundColor Red
 
     if ($null -ne $context) {
-        try { Add-AiwmLog -Context $context -Message "[ERROR] $errorMessage" } catch { }
-        try {
-            Complete-AiwmScriptOutput `
-                -Context $context `
-                -Status "FAILED" `
-                -Message $errorMessage
-        }
-        catch { }
+        try { Add-Log -Context $context -Message "[ERROR] $message" } catch { }
+        try { Complete-Output -Context $context -Status "FAILED" -Message $message } catch { }
     }
     else {
         try {
-            $fallbackRoot = Resolve-ExistingProjectRoot -RequestedPath $ProjectPath
-            $latestOutput = Join-Path $fallbackRoot "Output\Latest"
-            New-Item -ItemType Directory -Path $latestOutput -Force | Out-Null
-            $errorReport = Join-Path $latestOutput "Root-PowerShell-Path-Validation-Error.txt"
+            $root = Resolve-ProjectRoot -RequestedPath $ProjectPath
+            $latest = Join-Path $root "Output\Latest"
+            New-Item -ItemType Directory -Path $latest -Force | Out-Null
+            $errorReport = Join-Path $latest "Root-PowerShell-Path-Validation-Error.txt"
+
             @(
                 "Root PowerShell validation failed."
                 "Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-                "Error: $errorMessage"
+                "Error: $message"
                 ""
                 $_.ScriptStackTrace
             ) | Set-Content -LiteralPath $errorReport -Encoding UTF8
+
             Write-Host "Error report: $errorReport" -ForegroundColor Yellow
-            try { Start-Process explorer.exe -ArgumentList ('"{0}"' -f $latestOutput) | Out-Null } catch { }
+            try { Start-Process explorer.exe -ArgumentList ('"{0}"' -f $latest) | Out-Null } catch { }
         }
         catch { }
     }
