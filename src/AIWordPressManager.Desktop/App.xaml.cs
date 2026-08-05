@@ -78,17 +78,9 @@ public partial class App : System.Windows.Application
             MainWindow.Show();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
 
-            _ = Dispatcher.InvokeAsync(async () =>
-            {
-                try
-                {
-                    await mainViewModel.LoadDeferredSiteDataAsync();
-                }
-                catch (Exception deferredException)
-                {
-                    Log.Warning(deferredException, "Deferred workspace loading failed after startup.");
-                }
-            }, System.Windows.Threading.DispatcherPriority.Background);
+            // Non-essential workspaces are loaded by NavigateAsync when the user opens them.
+            // Avoid hydrating every ViewModel after startup because that competes with UI input,
+            // increases SQLite traffic, and retains collections the user may never need.
 
             progress.Report(StartupProgress.Create(100, "Ready", "AI WordPress Website Manager is ready"));
             var automationSettings = await _host.Services.GetRequiredService<AIWordPressManager.Application.Settings.IApplicationSettingsService>().GetAiAutomationSettingsAsync();
