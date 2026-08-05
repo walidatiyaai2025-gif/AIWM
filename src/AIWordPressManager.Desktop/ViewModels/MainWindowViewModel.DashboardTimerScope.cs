@@ -4,6 +4,8 @@ namespace AIWordPressManager.Desktop.ViewModels;
 
 public sealed partial class MainWindowViewModel
 {
+    private bool _immediateLiveDashboardRefreshQueued;
+
     /// <summary>
     /// Keeps the existing live dashboard timer page-scoped. Heavy runtime metrics,
     /// job reloads, and dashboard collection rebuilds no longer continue while the
@@ -35,6 +37,7 @@ public sealed partial class MainWindowViewModel
 
             default:
                 _liveDashboardTimer.Stop();
+                _immediateLiveDashboardRefreshQueued = false;
                 break;
         }
     }
@@ -42,11 +45,23 @@ public sealed partial class MainWindowViewModel
     private void QueueImmediateLiveDashboardRefresh()
     {
         var dispatcher = global::System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.HasShutdownStarted)
+        if (_immediateLiveDashboardRefreshQueued || dispatcher is null || dispatcher.HasShutdownStarted)
             return;
 
+        _immediateLiveDashboardRefreshQueued = true;
         _ = dispatcher.BeginInvoke(
             DispatcherPriority.Background,
-            new Action(async () => await UpdateLiveDashboardAsync()));
+            new Action(async () =>
+            {
+                try
+                {
+                    if (CurrentPage is "Dashboard" or "Performance")
+                        await UpdateLiveDashboardAsync();
+                }
+                finally
+                {
+                    _immediateLiveDashboardRefreshQueued = false;
+                }
+            }));
     }
 }
