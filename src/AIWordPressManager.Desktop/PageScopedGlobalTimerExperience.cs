@@ -8,10 +8,10 @@ using AIWordPressManager.Desktop.ViewModels;
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
-/// Restricts the legacy application-level live dashboard timer to pages that actually
-/// display live job/dashboard information. The timer is stopped while the application
-/// is inactive and while the user is working in non-live pages such as editors,
-/// settings, reports, backups, and SEO workspaces.
+/// Restricts the legacy application-level live dashboard timer to the small set of
+/// pages that really display global dashboard/job counters. Feature pages such as
+/// execution, operations, editors, reports, backups, and SEO workspaces use their own
+/// commands and lifecycle and must not trigger the global SQLite polling loop.
 /// </summary>
 internal static class PageScopedGlobalTimerExperience
 {
@@ -21,10 +21,7 @@ internal static class PageScopedGlobalTimerExperience
     {
         "Dashboard",
         "Jobs",
-        "Notification Center",
-        "Activity Timeline",
-        "Execution Center",
-        "Operations Center"
+        "Notification Center"
     };
 
     [ModuleInitializer]
