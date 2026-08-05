@@ -1,15 +1,15 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
 using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
 internal static class LiveOperationsExperience
 {
-    private static readonly ConditionalWeakTable<MainWindow, object> Attached = new();
+    private static readonly ConditionalWeakTable<MainWindow, State> Attached = new();
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -28,20 +28,21 @@ internal static class LiveOperationsExperience
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
         if (root.RowDefinitions.Count < 4) return;
 
-        Attached.Add(window, new object());
-
         var panel = BuildPanel(main);
+        var state = new State(window, main, panel);
+        Attached.Add(window, state);
+
         Grid.SetRow(panel, 3);
         Panel.SetZIndex(panel, 1000);
         root.Children.Add(panel);
 
-        var timer = new DispatcherTimer(DispatcherPriority.Background, window.Dispatcher)
-        {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        timer.Tick += (_, _) => Refresh(panel, main);
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
+        main.PropertyChanged += state.OnMainPropertyChanged;
+        window.Activated += state.OnWindowStateChanged;
+        window.Deactivated += state.OnWindowStateChanged;
+        window.StateChanged += state.OnWindowStateChanged;
+        window.Closed += state.OnClosed;
+
+        ApplyVisibility(state);
         Refresh(panel, main);
     }
 
@@ -58,6 +59,8 @@ internal static class LiveOperationsExperience
             BorderThickness = new Thickness(1),
             Background = ResourceBrush("SurfaceBrush", Brushes.White),
             BorderBrush = ResourceBrush("BorderBrush", Brushes.LightGray),
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
             Tag = "LiveOperationsPanel"
         };
 
@@ -114,7 +117,6 @@ internal static class LiveOperationsExperience
             Foreground = ResourceBrush("TextSecondaryBrush", Brushes.DimGray),
             TextWrapping = TextWrapping.Wrap
         });
-
         body.Children.Add(new ProgressBar
         {
             Tag = "OperationProgress",
@@ -166,8 +168,20 @@ internal static class LiveOperationsExperience
         return border;
     }
 
+    private static void ApplyVisibility(State state)
+    {
+        var pageAllowsPanel = state.Main.CurrentPage.Equals("Jobs", StringComparison.OrdinalIgnoreCase) ||
+                              state.Main.CurrentPage.Equals("Operations Center", StringComparison.OrdinalIgnoreCase);
+        var visible = pageAllowsPanel && state.Window.IsActive && state.Window.WindowState != WindowState.Minimized;
+        state.Panel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        state.Panel.IsHitTestVisible = visible;
+        if (visible) Refresh(state.Panel, state.Main);
+    }
+
     private static void Refresh(Border panel, MainWindowViewModel main)
     {
+        if (panel.Visibility != Visibility.Visible) return;
+
         var state = Find<TextBlock>(panel, "OperationState");
         var title = Find<TextBlock>(panel, "OperationTitle");
         var step = Find<TextBlock>(panel, "OperationStep");
@@ -211,9 +225,23 @@ internal static class LiveOperationsExperience
         if (detail is not null) detail.Text = string.IsNullOrWhiteSpace(currentDetail) ? "No background operation is running." : currentDetail;
         if (progress is not null) progress.Value = value;
         if (percent is not null) percent.Text = $"{value}%";
-
         panel.Opacity = running ? 1 : 0.94;
     }
+
+    private static bool IsOperationProperty(string? propertyName) => propertyName is
+        nameof(MainWindowViewModel.IsOperationRunning) or
+        nameof(MainWindowViewModel.OperationProgress) or
+        nameof(MainWindowViewModel.OperationTitle) or
+        nameof(MainWindowViewModel.OperationStep) or
+        nameof(MainWindowViewModel.OperationDetail) or
+        nameof(MainWindowViewModel.IsGuidedAnalysisRunning) or
+        nameof(MainWindowViewModel.GuidedAnalysisProgress) or
+        nameof(MainWindowViewModel.GuidedAnalysisStage) or
+        nameof(MainWindowViewModel.GuidedAnalysisDetail) or
+        nameof(MainWindowViewModel.IsSafeAutopilotRunning) or
+        nameof(MainWindowViewModel.SafeAutopilotProgress) or
+        nameof(MainWindowViewModel.SafeAutopilotStage) or
+        nameof(MainWindowViewModel.SafeAutopilotSummary);
 
     private static T? Find<T>(DependencyObject root, string tag) where T : FrameworkElement
     {
@@ -229,4 +257,34 @@ internal static class LiveOperationsExperience
 
     private static Brush ResourceBrush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
+
+    private sealed class State(MainWindow window, MainWindowViewModel main, Border panel)
+    {
+        public MainWindow Window { get; } = window;
+        public MainWindowViewModel Main { get; } = main;
+        public Border Panel { get; } = panel;
+
+        public void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.CurrentPage))
+            {
+                ApplyVisibility(this);
+                return;
+            }
+
+            if (IsOperationProperty(e.PropertyName))
+                Refresh(Panel, Main);
+        }
+
+        public void OnWindowStateChanged(object? sender, EventArgs e) => ApplyVisibility(this);
+
+        public void OnClosed(object? sender, EventArgs e)
+        {
+            Main.PropertyChanged -= OnMainPropertyChanged;
+            Window.Activated -= OnWindowStateChanged;
+            Window.Deactivated -= OnWindowStateChanged;
+            Window.StateChanged -= OnWindowStateChanged;
+            Window.Closed -= OnClosed;
+        }
+    }
 }
