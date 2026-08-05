@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -107,7 +108,7 @@ namespace AIWordPressManager.Desktop
         private static Border? _alertBorder;
         private static string? _lastLogPath;
         private static DateTime _lastLogWriteUtc;
-        private static bool _refreshQueued;
+        private static int _refreshQueued;
 
         [ModuleInitializer]
         internal static void Initialize()
@@ -136,6 +137,7 @@ namespace AIWordPressManager.Desktop
             {
                 CountdownTimer.Stop();
                 DisposeWatchers();
+                Interlocked.Exchange(ref _refreshQueued, 0);
                 _windowReference = null;
                 _alertBorder = null;
             };
@@ -188,13 +190,27 @@ namespace AIWordPressManager.Desktop
 
         private static void QueueRefresh(MainWindow window)
         {
-            if (_refreshQueued || !window.IsLoaded) return;
-            _refreshQueued = true;
-            window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            var dispatcher = window.Dispatcher;
+            if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+            if (Interlocked.Exchange(ref _refreshQueued, 1) != 0) return;
+
+            try
             {
-                _refreshQueued = false;
-                if (window.IsLoaded) RefreshAlert(window);
-            }));
+                dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    Interlocked.Exchange(ref _refreshQueued, 0);
+                    if (!window.IsLoaded) return;
+                    RefreshAlert(window);
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+                Interlocked.Exchange(ref _refreshQueued, 0);
+            }
+            catch (TaskCanceledException)
+            {
+                Interlocked.Exchange(ref _refreshQueued, 0);
+            }
         }
 
         private static void DisposeWatchers()
