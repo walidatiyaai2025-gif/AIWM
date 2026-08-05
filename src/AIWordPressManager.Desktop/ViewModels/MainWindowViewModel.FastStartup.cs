@@ -61,6 +61,10 @@ public sealed partial class MainWindowViewModel
             OperationProgress = 0;
             OperationStep = "Ready";
             OperationTitle = "Ready";
+
+            // Take ownership from the constructor's legacy all-in-one timer only after
+            // the essential startup path is complete.
+            ConfigureOptimizedDashboardTimers();
             RefreshDashboard();
         }
     }
