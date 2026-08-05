@@ -42,7 +42,7 @@ internal static class ExecutionTimelineExperience
 
         var timer = new DispatcherTimer(DispatcherPriority.ContextIdle, window.Dispatcher)
         {
-            Interval = TimeSpan.FromSeconds(1)
+            Interval = TimeSpan.FromSeconds(3)
         };
         timer.Tick += async (_, _) =>
         {
@@ -114,12 +114,12 @@ internal static class ExecutionTimelineExperience
 
         var summary = new UniformGrid { Columns = 6, Margin = new Thickness(0, 0, 0, 14) };
         Grid.SetRow(summary, 1);
-        summary.Children.Add(SummaryCard("Running", nameof(JobsViewModel.RunningCount), "PrimaryBrush"));
-        summary.Children.Add(SummaryCard("Waiting", nameof(JobsViewModel.WaitingCount), "TextPrimaryBrush"));
-        summary.Children.Add(SummaryCard("Paused", nameof(JobsViewModel.PausedCount), "WarningBrush"));
-        summary.Children.Add(SummaryCard("Completed", nameof(JobsViewModel.CompletedCount), "SuccessBrush"));
-        summary.Children.Add(SummaryCard("Failed", nameof(JobsViewModel.FailedCount), "DangerBrush"));
-        summary.Children.Add(SummaryCard("Cancelled", nameof(JobsViewModel.CancelledCount), "TextSecondaryBrush"));
+        summary.Children.Add(SummaryCard("Running", nameof(JobsViewModel.RunningCount), "PrimaryBrush", main.Jobs));
+        summary.Children.Add(SummaryCard("Waiting", nameof(JobsViewModel.WaitingCount), "TextPrimaryBrush", main.Jobs));
+        summary.Children.Add(SummaryCard("Paused", nameof(JobsViewModel.PausedCount), "WarningBrush", main.Jobs));
+        summary.Children.Add(SummaryCard("Completed", nameof(JobsViewModel.CompletedCount), "SuccessBrush", main.Jobs));
+        summary.Children.Add(SummaryCard("Failed", nameof(JobsViewModel.FailedCount), "DangerBrush", main.Jobs));
+        summary.Children.Add(SummaryCard("Cancelled", nameof(JobsViewModel.CancelledCount), "TextSecondaryBrush", main.Jobs));
         page.Children.Add(summary);
 
         var workspace = new Grid();
@@ -146,11 +146,11 @@ internal static class ExecutionTimelineExperience
             Source = main.Jobs,
             Mode = BindingMode.TwoWay
         });
-        table.Columns.Add(TextColumn("Started", nameof(JobRow.StartedAtLocalText), 130));
+        table.Columns.Add(TextColumn("Started UTC", nameof(JobRow.StartedAtUtc), 145, "{0:yyyy-MM-dd HH:mm:ss}"));
         table.Columns.Add(TextColumn("Site", nameof(JobRow.SiteName), 150));
         table.Columns.Add(TextColumn("Operation", nameof(JobRow.JobType), 140));
         table.Columns.Add(TextColumn("Status", nameof(JobRow.Status), 95));
-        table.Columns.Add(TextColumn("Progress", nameof(JobRow.ProgressText), 85));
+        table.Columns.Add(TextColumn("Progress", nameof(JobRow.ProgressPercent), 85, "{0}%"));
         table.Columns.Add(TextColumn("Duration", nameof(JobRow.DurationText), 90));
         table.Columns.Add(TextColumn("Current step", nameof(JobRow.CurrentStep), 280));
         tableBorder.Child = table;
@@ -168,11 +168,11 @@ internal static class ExecutionTimelineExperience
             FontWeight = FontWeights.Bold,
             Margin = new Thickness(0, 0, 0, 12)
         });
-        detailStack.Children.Add(BoundLabel("Correlation ID", "SelectedItem.CorrelationIdText", main.Jobs));
+        detailStack.Children.Add(BoundLabel("Correlation ID", "SelectedItem.Id", main.Jobs));
         detailStack.Children.Add(BoundLabel("Status", "SelectedItem.Status", main.Jobs));
         detailStack.Children.Add(BoundLabel("Duration", "SelectedItem.DurationText", main.Jobs));
-        detailStack.Children.Add(BoundLabel("Started", "SelectedItem.StartedAtLocalText", main.Jobs));
-        detailStack.Children.Add(BoundLabel("Completed", "SelectedItem.CompletedAtLocalText", main.Jobs));
+        detailStack.Children.Add(BoundLabel("Started UTC", "SelectedItem.StartedAtUtc", main.Jobs, "{0:yyyy-MM-dd HH:mm:ss}"));
+        detailStack.Children.Add(BoundLabel("Completed UTC", "SelectedItem.CompletedAtUtc", main.Jobs, "{0:yyyy-MM-dd HH:mm:ss}"));
         detailStack.Children.Add(new TextBlock
         {
             Text = "Details / error",
@@ -187,21 +187,28 @@ internal static class ExecutionTimelineExperience
             MinHeight = 130,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
-        error.SetBinding(TextBox.TextProperty, new Binding("SelectedItem.DetailText") { Source = main.Jobs });
+        error.SetBinding(TextBox.TextProperty, new Binding("SelectedItem.ErrorDetails")
+        {
+            Source = main.Jobs,
+            TargetNullValue = "No error details were recorded."
+        });
         detailStack.Children.Add(error);
 
         var actions = new WrapPanel { Margin = new Thickness(0, 14, 0, 0) };
         detailStack.Children.Add(actions);
         actions.Children.Add(ActionButton("Copy ID", () =>
         {
-            if (main.Jobs.SelectedItem is not null)
-                Clipboard.SetText(main.Jobs.SelectedItem.CorrelationIdText);
+            if (main.Jobs.SelectedItem is { } job)
+                Clipboard.SetText(job.Id.ToString());
             return Task.CompletedTask;
         }));
         actions.Children.Add(ActionButton("Copy details", () =>
         {
-            if (main.Jobs.SelectedItem is not null)
-                Clipboard.SetText(main.Jobs.SelectedItem.CopySummary);
+            if (main.Jobs.SelectedItem is { } job)
+            {
+                var summaryText = $"Correlation ID: {job.Id}\nSite: {job.SiteName}\nOperation: {job.JobType}\nStatus: {job.Status}\nProgress: {job.ProgressPercent}%\nStarted UTC: {job.StartedAtUtc:O}\nCompleted UTC: {job.CompletedAtUtc:O}\nDuration: {job.DurationText}\nStep: {job.CurrentStep}\nError: {job.ErrorDetails}";
+                Clipboard.SetText(summaryText);
+            }
             return Task.CompletedTask;
         }));
         actions.Children.Add(ActionButton("Retry", async () =>
@@ -234,7 +241,7 @@ internal static class ExecutionTimelineExperience
         state.Page.IsHitTestVisible = visible;
     }
 
-    private static Border SummaryCard(string label, string path, string brushKey)
+    private static Border SummaryCard(string label, string path, string brushKey, object source)
     {
         var card = Card();
         card.Margin = new Thickness(4);
@@ -247,12 +254,12 @@ internal static class ExecutionTimelineExperience
             FontWeight = FontWeights.Bold,
             Foreground = Brush(brushKey, Brushes.Black)
         };
-        value.SetBinding(TextBlock.TextProperty, new Binding(path));
+        value.SetBinding(TextBlock.TextProperty, new Binding(path) { Source = source });
         stack.Children.Add(value);
         return card;
     }
 
-    private static FrameworkElement BoundLabel(string label, string path, object source)
+    private static FrameworkElement BoundLabel(string label, string path, object source, string? stringFormat = null)
     {
         var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
         stack.Children.Add(new TextBlock
@@ -262,15 +269,20 @@ internal static class ExecutionTimelineExperience
             Foreground = Brush("TextSecondaryBrush", Brushes.DimGray)
         });
         var value = new TextBlock { FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-        value.SetBinding(TextBlock.TextProperty, new Binding(path) { Source = source });
+        value.SetBinding(TextBlock.TextProperty, new Binding(path)
+        {
+            Source = source,
+            StringFormat = stringFormat,
+            TargetNullValue = "—"
+        });
         stack.Children.Add(value);
         return stack;
     }
 
-    private static DataGridTextColumn TextColumn(string header, string path, double width) => new()
+    private static DataGridTextColumn TextColumn(string header, string path, double width, string? stringFormat = null) => new()
     {
         Header = header,
-        Binding = new Binding(path),
+        Binding = new Binding(path) { StringFormat = stringFormat },
         Width = new DataGridLength(width)
     };
 
