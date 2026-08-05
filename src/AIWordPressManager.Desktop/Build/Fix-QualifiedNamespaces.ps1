@@ -56,4 +56,31 @@ Update-FileText -Path $systemLoginExperience -SuccessMessage 'Normalized SQLite 
         'await using var transaction = connection.BeginTransaction();')
 }
 
+$demoDataExperience = Join-Path $ProjectDirectory 'DemoDataInAppExperience.cs'
+Update-FileText -Path $demoDataExperience -SuccessMessage 'Normalized in-app demo data launcher WPF ZIndex.' -Transform {
+    param($content)
+    $content.Replace(
+@'            FontWeight = FontWeights.SemiBold,
+            Panel = { ZIndex = 5000 }
+        };
+
+        button.Click'@,
+@'            FontWeight = FontWeights.SemiBold
+        };
+        Panel.SetZIndex(button, 5000);
+
+        button.Click'@)
+}
+
+$appCodeBehind = Join-Path $ProjectDirectory 'App.xaml.cs'
+Update-FileText -Path $appCodeBehind -SuccessMessage 'Connected MainWindow to the active SQLite database path for demo data.' -Transform {
+    param($content)
+    $content.Replace(
+@'            MainWindow = _host.Services.GetRequiredService<MainWindow>();
+            MainWindow.Show();'@,
+@'            MainWindow = _host.Services.GetRequiredService<MainWindow>();
+            MainWindow.Tag = databasePath;
+            MainWindow.Show();'@)
+}
+
 Write-Host 'Desktop source normalization completed.'
