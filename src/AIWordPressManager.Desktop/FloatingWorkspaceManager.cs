@@ -1,15 +1,17 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
 /// Legacy floating workspaces are intentionally disabled. Analysis tools remain
 /// available through their dedicated pages, contextual actions and AI Command Center.
-/// This guard prevents old feature timers from reintroducing overlapping panels.
+/// This guard prevents old feature surfaces from reintroducing overlapping panels.
 /// </summary>
 internal static class FloatingWorkspaceManager
 {
@@ -41,18 +43,24 @@ internal static class FloatingWorkspaceManager
     {
         if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
         if (Attached.TryGetValue(window, out _)) return;
-        if (window.Content is not Grid root) return;
+        if (window.Content is not Grid root || window.DataContext is not MainWindowViewModel main) return;
 
         Attached.Add(window, new object());
 
-        var timer = new DispatcherTimer(DispatcherPriority.Send, window.Dispatcher)
+        void ApplyAtIdle() => window.Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(() => SuppressLegacyPanels(root)));
+
+        PropertyChangedEventHandler pageChanged = (_, args) =>
         {
-            Interval = TimeSpan.FromMilliseconds(120)
+            if (args.PropertyName == nameof(MainWindowViewModel.CurrentPage))
+                ApplyAtIdle();
         };
-        timer.Tick += (_, _) => SuppressLegacyPanels(root);
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
-        SuppressLegacyPanels(root);
+
+        main.PropertyChanged += pageChanged;
+        window.Closed += (_, _) => main.PropertyChanged -= pageChanged;
+
+        ApplyAtIdle();
     }
 
     private static void SuppressLegacyPanels(DependencyObject root)
