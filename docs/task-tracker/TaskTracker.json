@@ -1,0 +1,22 @@
+{
+  "sourceDocument": "AI_WordPress_Manager_Full_Execution_Task_Tracker_AR.docx",
+  "totalTasks": 296,
+  "batchSize": 100,
+  "currentBatch": 1,
+  "lastUpdatedUtc": "2026-08-05T07:35:00Z",
+  "tasks": [
+    { "id": 1, "title": "تحديد نطاق المنتج والإصدار الأول", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/project-scope.md" },
+    { "id": 2, "title": "تحديد المستخدمين المستهدفين والأدوار والصلاحيات", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/personas-and-roles.md" },
+    { "id": 3, "title": "تصنيف المتطلبات إلى MVP وV1 وما بعد الإطلاق", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/product-backlog.md" },
+    { "id": 4, "title": "إنشاء Definition of Done موحد", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/definition-of-done.md" },
+    { "id": 5, "title": "اعتماد سياسة Git والفروع وPull Requests", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/git-workflow.md" },
+    { "id": 6, "title": "اعتماد Semantic Versioning", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/versioning.md" },
+    { "id": 7, "title": "إنشاء سجل القرارات المعمارية ADR", "status": "completed", "note": "تم التنفيذ وإضافة docs/architecture/decisions/README.md" },
+    { "id": 8, "title": "إنشاء سجل المخاطر وخطط المعالجة", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/risk-register.md" },
+    { "id": 9, "title": "إنشاء مصفوفة البيئات", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/environment-matrix.md" },
+    { "id": 10, "title": "خطة النسخ الاحتياطي والاسترجاع للمستودع والوثائق", "status": "completed", "note": "تم التنفيذ وإضافة docs/governance/repository-backup-plan.md" }
+  ],
+  "unimportedTaskRanges": [
+    { "from": 11, "to": 296, "status": "pending", "note": "تُستورد العناوين من مستند المصدر عند بدء كل دفعة بدون اختراع أو تغيير نص المهمة." }
+  ]
+}
