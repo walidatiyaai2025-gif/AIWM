@@ -8,20 +8,20 @@ using System.Windows.Threading;
 namespace AIWordPressManager.Desktop;
 
 /// <summary>
-/// Applies inexpensive, one-time performance defaults to heavy WPF surfaces.
-/// It also retires legacy/background work panels that should never cover the
-/// user's active page. No polling timer or repeated whole-window scan is used.
+/// Applies lightweight, one-time WPF virtualization defaults without changing
+/// page commands, editing rules, selection behavior, or data bindings.
+/// Background-only legacy overlays are retired when they load; no timer and no
+/// repeated full-window visual-tree scan is used.
 /// </summary>
 internal static class ApplicationPerformanceExperience
 {
     private static readonly ConditionalWeakTable<FrameworkElement, object> Optimized = new();
-    private static readonly ConditionalWeakTable<MainWindow, WindowState> Windows = new();
+    private static readonly ConditionalWeakTable<FrameworkElement, object> RetirementScheduled = new();
 
     private static readonly string[] BackgroundTextMarkers =
     [
         "Real content analysis",
         "Local rules run against the synchronized WordPress snapshot",
-        "Scanned 51 content items",
         "AI Copilot Inbox",
         "Live operations",
         "Priority resolution workspace",
@@ -47,12 +47,6 @@ internal static class ApplicationPerformanceExperience
     internal static void Initialize()
     {
         EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnMainWindowLoaded),
-            true);
-
-        EventManager.RegisterClassHandler(
             typeof(DataGrid),
             FrameworkElement.LoadedEvent,
             new RoutedEventHandler(OnDataGridLoaded),
@@ -77,47 +71,24 @@ internal static class ApplicationPerformanceExperience
             true);
     }
 
-    private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window))
-            return;
-
-        if (Windows.TryGetValue(window, out _))
-            return;
-
-        var state = new WindowState(window);
-        Windows.Add(window, state);
-        window.ContentRendered += state.OnContentRendered;
-        window.Closed += state.OnClosed;
-
-        state.ScheduleCleanup();
-    }
-
     private static void OnDataGridLoaded(object sender, RoutedEventArgs e)
     {
         if (e.OriginalSource is not DataGrid grid || !MarkOptimized(grid))
             return;
 
+        // Performance-only settings. Do not overwrite IsReadOnly, selection mode,
+        // headers, row details, commands, or user-defined scroll-bar behavior.
         grid.EnableRowVirtualization = true;
         grid.EnableColumnVirtualization = true;
-        grid.HeadersVisibility = DataGridHeadersVisibility.Column;
-        grid.GridLinesVisibility = DataGridGridLinesVisibility.Horizontal;
-        grid.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.Collapsed;
-        grid.SelectionUnit = DataGridSelectionUnit.FullRow;
-        grid.SelectionMode = DataGridSelectionMode.Extended;
-        grid.CanUserAddRows = false;
-        grid.CanUserDeleteRows = false;
-        grid.IsReadOnly = true;
         grid.SnapsToDevicePixels = true;
         grid.UseLayoutRounding = true;
 
         VirtualizingPanel.SetIsVirtualizing(grid, true);
         VirtualizingPanel.SetVirtualizationMode(grid, VirtualizationMode.Recycling);
+        VirtualizingPanel.SetIsVirtualizingWhenGrouping(grid, true);
         VirtualizingPanel.SetScrollUnit(grid, ScrollUnit.Pixel);
         ScrollViewer.SetCanContentScroll(grid, true);
         ScrollViewer.SetIsDeferredScrollingEnabled(grid, true);
-        ScrollViewer.SetVerticalScrollBarVisibility(grid, ScrollBarVisibility.Auto);
-        ScrollViewer.SetHorizontalScrollBarVisibility(grid, ScrollBarVisibility.Auto);
     }
 
     private static void OnItemsControlLoaded(object sender, RoutedEventArgs e)
@@ -127,6 +98,7 @@ internal static class ApplicationPerformanceExperience
 
         VirtualizingPanel.SetIsVirtualizing(items, true);
         VirtualizingPanel.SetVirtualizationMode(items, VirtualizationMode.Recycling);
+        VirtualizingPanel.SetIsVirtualizingWhenGrouping(items, true);
         VirtualizingPanel.SetScrollUnit(items, ScrollUnit.Pixel);
         ScrollViewer.SetCanContentScroll(items, true);
         ScrollViewer.SetIsDeferredScrollingEnabled(items, true);
@@ -137,10 +109,8 @@ internal static class ApplicationPerformanceExperience
         if (e.OriginalSource is not ScrollViewer viewer || !MarkOptimized(viewer))
             return;
 
-        viewer.CanContentScroll = true;
+        // Keep page-specific PanningMode and bar visibility unchanged.
         viewer.IsDeferredScrollingEnabled = true;
-        viewer.PanningMode = PanningMode.Both;
-        viewer.PanningDeceleration = 0.001;
         viewer.UseLayoutRounding = true;
         viewer.SnapsToDevicePixels = true;
     }
@@ -150,13 +120,14 @@ internal static class ApplicationPerformanceExperience
         if (e.OriginalSource is not FrameworkElement element || element is MainWindow)
             return;
 
-        if (Window.GetWindow(element) is not MainWindow)
+        if (Window.GetWindow(element) is not MainWindow || !LooksLikeBackgroundSurface(element))
             return;
 
-        if (!LooksLikeBackgroundSurface(element))
+        if (RetirementScheduled.TryGetValue(element, out _))
             return;
 
-        element.Dispatcher.BeginInvoke(
+        RetirementScheduled.Add(element, new object());
+        _ = element.Dispatcher.BeginInvoke(
             DispatcherPriority.Loaded,
             new Action(() => Retire(element)));
     }
@@ -171,14 +142,14 @@ internal static class ApplicationPerformanceExperience
             BackgroundTagMarkers.Any(marker => tag.Contains(marker, StringComparison.OrdinalIgnoreCase)))
             return true;
 
-        // Text scanning is restricted to likely overlay containers only.
+        // Text checks are limited to plausible overlay containers and a small subtree.
         if (element is not Border and not ContentControl)
             return false;
 
         if (element.ActualWidth > 0 && element.ActualWidth < 260)
             return false;
 
-        var text = ReadText(element, maximumNodes: 90);
+        var text = ReadText(element, maximumNodes: 70);
         return BackgroundTextMarkers.Any(marker =>
             text.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
@@ -224,11 +195,14 @@ internal static class ApplicationPerformanceExperience
 
     private static void Retire(FrameworkElement element)
     {
-        if (element.Tag?.ToString() is string tag &&
-            tag.Contains("PrimaryWorkActionBar", StringComparison.OrdinalIgnoreCase))
+        if (!element.IsLoaded)
             return;
 
-        element.ClearValue(UIElement.VisibilityProperty);
+        var tag = element.Tag?.ToString() ?? string.Empty;
+        if (tag.Contains("PrimaryWorkActionBar", StringComparison.OrdinalIgnoreCase) ||
+            tag.Contains("Docked", StringComparison.OrdinalIgnoreCase))
+            return;
+
         element.Visibility = Visibility.Collapsed;
         element.IsHitTestVisible = false;
         element.Focusable = false;
@@ -251,74 +225,6 @@ internal static class ApplicationPerformanceExperience
             case ContentControl contentControl when ReferenceEquals(contentControl.Content, element):
                 contentControl.Content = null;
                 break;
-        }
-    }
-
-    private sealed class WindowState(MainWindow window)
-    {
-        private bool _cleanupPending;
-        private bool _disposed;
-
-        public void ScheduleCleanup()
-        {
-            if (_disposed || _cleanupPending)
-                return;
-
-            _cleanupPending = true;
-            _ = window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
-            {
-                _cleanupPending = false;
-                if (_disposed || !window.IsLoaded)
-                    return;
-
-                CleanupVisibleBackgroundSurfaces(window);
-            }));
-        }
-
-        public void OnContentRendered(object? sender, EventArgs e) => ScheduleCleanup();
-
-        public void OnClosed(object? sender, EventArgs e)
-        {
-            if (_disposed)
-                return;
-
-            _disposed = true;
-            window.ContentRendered -= OnContentRendered;
-            window.Closed -= OnClosed;
-        }
-    }
-
-    private static void CleanupVisibleBackgroundSurfaces(DependencyObject root)
-    {
-        var candidates = new List<FrameworkElement>();
-        CollectCandidates(root, candidates, maximumNodes: 2200);
-
-        foreach (var candidate in candidates)
-        {
-            if (LooksLikeBackgroundSurface(candidate))
-                Retire(candidate);
-        }
-    }
-
-    private static void CollectCandidates(DependencyObject root, ICollection<FrameworkElement> results, int maximumNodes)
-    {
-        var queue = new Queue<DependencyObject>();
-        queue.Enqueue(root);
-        var visited = 0;
-
-        while (queue.Count > 0 && visited++ < maximumNodes)
-        {
-            var current = queue.Dequeue();
-            if (current is FrameworkElement element &&
-                element.Visibility == Visibility.Visible &&
-                element is Border or ContentControl or Popup)
-                results.Add(element);
-
-            if (current is not Visual and not System.Windows.Media.Media3D.Visual3D)
-                continue;
-
-            for (var index = 0; index < VisualTreeHelper.GetChildrenCount(current); index++)
-                queue.Enqueue(VisualTreeHelper.GetChild(current, index));
         }
     }
 }
