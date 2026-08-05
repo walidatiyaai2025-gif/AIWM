@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -5,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AIWordPressManager.Desktop.ViewModels;
 using AIWordPressManager.Desktop.ViewModels.Sites;
 
@@ -27,7 +29,7 @@ internal static class SiteWorkspaceMemoryExperience
         var host = FindTopBar(root);
         if (host is null) return;
 
-        var state = new WorkspaceState(main);
+        var state = new WorkspaceState(main, window.Dispatcher);
         Attached.Add(window, state);
 
         var switcher = new Button
@@ -42,21 +44,33 @@ internal static class SiteWorkspaceMemoryExperience
         switcher.Click += (_, _) => OpenSiteMenu(switcher, state);
         host.Children.Insert(Math.Max(0, host.Children.Count - 1), switcher);
 
-        main.PropertyChanged += (_, args) =>
+        PropertyChangedEventHandler mainChanged = (_, args) =>
         {
             if (args.PropertyName == nameof(MainWindowViewModel.CurrentPage))
                 state.RecordCurrentPage();
         };
-        main.Sites.SelectedSiteChanged += async (_, _) => await state.OnSelectedSiteChangedAsync();
-        window.Closing += (_, _) => state.SaveNow();
-
-        window.PreviewKeyDown += (_, args) =>
+        EventHandler selectedSiteChanged = async (_, _) => await state.OnSelectedSiteChangedAsync();
+        CancelEventHandler closing = (_, _) => state.SaveNow();
+        KeyEventHandler previewKeyDown = (_, args) =>
         {
             if (args.Key != Key.S ||
                 (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) !=
                 (ModifierKeys.Control | ModifierKeys.Shift)) return;
             args.Handled = true;
             OpenSiteMenu(switcher, state);
+        };
+
+        main.PropertyChanged += mainChanged;
+        main.Sites.SelectedSiteChanged += selectedSiteChanged;
+        window.Closing += closing;
+        window.PreviewKeyDown += previewKeyDown;
+        window.Closed += (_, _) =>
+        {
+            main.PropertyChanged -= mainChanged;
+            main.Sites.SelectedSiteChanged -= selectedSiteChanged;
+            window.Closing -= closing;
+            window.PreviewKeyDown -= previewKeyDown;
+            state.Dispose();
         };
     }
 
@@ -96,19 +110,22 @@ internal static class SiteWorkspaceMemoryExperience
         menu.Items.Add(clear);
 
         owner.ContextMenu = menu;
+        menu.Closed += (_, _) => owner.ContextMenu = null;
         menu.IsOpen = true;
     }
 
-    private sealed class WorkspaceState
+    private sealed class WorkspaceState : IDisposable
     {
         private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
         private readonly MainWindowViewModel _main;
         private readonly string _filePath;
         private readonly Dictionary<Guid, string> _lastPages;
+        private readonly DispatcherTimer _saveDebounce;
         private Guid? _previousSiteId;
         private bool _switching;
+        private bool _disposed;
 
-        public WorkspaceState(MainWindowViewModel main)
+        public WorkspaceState(MainWindowViewModel main, Dispatcher dispatcher)
         {
             _main = main;
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIWordPressManager");
@@ -116,6 +133,12 @@ internal static class SiteWorkspaceMemoryExperience
             _filePath = Path.Combine(directory, "site-workspaces.json");
             _lastPages = Load();
             _previousSiteId = _main.Sites.SelectedSite?.Id;
+
+            _saveDebounce = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(750)
+            };
+            _saveDebounce.Tick += OnSaveDebounceTick;
         }
 
         public IReadOnlyList<SiteCardViewModel> Sites => _main.Sites.Sites;
@@ -128,7 +151,7 @@ internal static class SiteWorkspaceMemoryExperience
             if (_switching || siteId is null || string.IsNullOrWhiteSpace(page)) return;
             if (page.Equals("Sites", StringComparison.OrdinalIgnoreCase)) return;
             _lastPages[siteId.Value] = page.Trim();
-            SaveNow();
+            ScheduleSave();
         }
 
         public async Task OnSelectedSiteChangedAsync()
@@ -141,7 +164,7 @@ internal static class SiteWorkspaceMemoryExperience
                 _lastPages[previous] = _main.CurrentPage;
 
             _previousSiteId = currentId;
-            SaveNow();
+            ScheduleSave();
 
             if (_switching || currentId is null) return;
             if (_lastPages.TryGetValue(currentId.Value, out var target) &&
@@ -179,7 +202,7 @@ internal static class SiteWorkspaceMemoryExperience
             {
                 _previousSiteId = site.Id;
                 _switching = false;
-                SaveNow();
+                ScheduleSave();
             }
         }
 
@@ -199,6 +222,8 @@ internal static class SiteWorkspaceMemoryExperience
 
         public void SaveNow()
         {
+            if (_disposed) return;
+            _saveDebounce.Stop();
             try
             {
                 var temp = _filePath + ".tmp";
@@ -206,6 +231,28 @@ internal static class SiteWorkspaceMemoryExperience
                 File.Move(temp, _filePath, true);
             }
             catch { }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            SaveNow();
+            _disposed = true;
+            _saveDebounce.Stop();
+            _saveDebounce.Tick -= OnSaveDebounceTick;
+        }
+
+        private void ScheduleSave()
+        {
+            if (_disposed) return;
+            _saveDebounce.Stop();
+            _saveDebounce.Start();
+        }
+
+        private void OnSaveDebounceTick(object? sender, EventArgs e)
+        {
+            _saveDebounce.Stop();
+            SaveNow();
         }
 
         private Dictionary<Guid, string> Load()
