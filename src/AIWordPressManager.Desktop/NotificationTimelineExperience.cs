@@ -1,10 +1,10 @@
+using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Threading;
 using AIWordPressManager.Desktop.Services;
 using AIWordPressManager.Desktop.ViewModels;
 
@@ -12,7 +12,7 @@ namespace AIWordPressManager.Desktop;
 
 internal static class NotificationTimelineExperience
 {
-    private static readonly ConditionalWeakTable<MainWindow, object> Attached = new();
+    private static readonly ConditionalWeakTable<MainWindow, State> Attached = new();
 
     [ModuleInitializer]
     internal static void Initialize()
@@ -30,8 +30,6 @@ internal static class NotificationTimelineExperience
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main || window.Content is not Grid root) return;
 
-        Attached.Add(window, new object());
-
         var panel = CreatePanel(main);
         Grid.SetRowSpan(panel, Math.Max(1, root.RowDefinitions.Count));
         Panel.SetZIndex(panel, 200);
@@ -42,27 +40,15 @@ internal static class NotificationTimelineExperience
         Panel.SetZIndex(toggle, 210);
         root.Children.Add(toggle);
 
-        window.PreviewKeyDown += (_, args) =>
-        {
-            if (args.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-            {
-                Toggle(panel);
-                args.Handled = true;
-            }
-        };
+        var state = new State(window, main, panel, toggle);
+        Attached.Add(window, state);
 
-        void Refresh() => RefreshPanel(panel, toggle, main);
-        main.Operations.History.CollectionChanged += (_, _) => Refresh();
-        main.Operations.Operations.CollectionChanged += (_, _) => Refresh();
+        window.PreviewKeyDown += state.OnPreviewKeyDown;
+        window.Closed += state.OnClosed;
+        main.Operations.History.CollectionChanged += state.OnCollectionChanged;
+        main.Operations.Operations.CollectionChanged += state.OnCollectionChanged;
 
-        var timer = new DispatcherTimer(DispatcherPriority.Background, window.Dispatcher)
-        {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        timer.Tick += (_, _) => Refresh();
-        window.Closed += (_, _) => timer.Stop();
-        timer.Start();
-        Refresh();
+        RefreshPanel(panel, toggle, main);
     }
 
     private static Button CreateToggleButton(Border panel, MainWindowViewModel main)
@@ -78,7 +64,12 @@ internal static class NotificationTimelineExperience
             ToolTip = "Notification Center and Activity Timeline (Ctrl+Shift+N)",
             FontWeight = FontWeights.SemiBold
         };
-        button.Click += (_, _) => Toggle(panel);
+        button.Click += (_, _) =>
+        {
+            Toggle(panel);
+            if (panel.Visibility == Visibility.Visible)
+                RefreshPanel(panel, button, main);
+        };
         return button;
     }
 
@@ -178,6 +169,8 @@ internal static class NotificationTimelineExperience
         var unread = history.Count(x => x.State is "Failed" or "Completed" or "Cancelled");
         toggle.Content = unread == 0 ? "🔔  0" : $"🔔  {unread}";
 
+        if (panel.Visibility != Visibility.Visible) return;
+
         var list = Find<StackPanel>(panel, "NotificationItems");
         if (list is null) return;
 
@@ -223,7 +216,7 @@ internal static class NotificationTimelineExperience
             Margin = new Thickness(0, 0, 0, 8),
             Padding = new Thickness(10),
             CornerRadius = new CornerRadius(9),
-            BorderThickness = new Thickness(1, 1, 1, 1),
+            BorderThickness = new Thickness(1),
             BorderBrush = ResourceBrush("BorderBrush", Brushes.LightGray),
             Background = ResourceBrush("SurfaceAltBrush", Brushes.WhiteSmoke)
         };
@@ -306,4 +299,27 @@ internal static class NotificationTimelineExperience
 
     private static Brush ResourceBrush(string key, Brush fallback) =>
         global::System.Windows.Application.Current?.TryFindResource(key) as Brush ?? fallback;
+
+    private sealed class State(MainWindow window, MainWindowViewModel main, Border panel, Button toggle)
+    {
+        public void OnPreviewKeyDown(object sender, KeyEventArgs args)
+        {
+            if (args.Key != Key.N || Keyboard.Modifiers != (ModifierKeys.Control | ModifierKeys.Shift)) return;
+            Toggle(panel);
+            if (panel.Visibility == Visibility.Visible)
+                RefreshPanel(panel, toggle, main);
+            args.Handled = true;
+        }
+
+        public void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+            RefreshPanel(panel, toggle, main);
+
+        public void OnClosed(object? sender, EventArgs e)
+        {
+            window.PreviewKeyDown -= OnPreviewKeyDown;
+            window.Closed -= OnClosed;
+            main.Operations.History.CollectionChanged -= OnCollectionChanged;
+            main.Operations.Operations.CollectionChanged -= OnCollectionChanged;
+        }
+    }
 }
