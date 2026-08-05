@@ -14,7 +14,6 @@ namespace AIWordPressManager.Desktop;
 internal static class DockedExecutionNoticeExperience
 {
     private static readonly ConditionalWeakTable<MainWindow, State> Attached = new();
-
     private static readonly string[] ApprovedMarkers =
     [
         "approved change(s) ready for execution",
@@ -24,17 +23,10 @@ internal static class DockedExecutionNoticeExperience
     [ModuleInitializer]
     internal static void Initialize()
     {
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnMainWindowLoaded),
-            true);
-
-        EventManager.RegisterClassHandler(
-            typeof(FrameworkElement),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnElementLoaded),
-            true);
+        EventManager.RegisterClassHandler(typeof(MainWindow), FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnMainWindowLoaded), true);
+        EventManager.RegisterClassHandler(typeof(FrameworkElement), FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnElementLoaded), true);
     }
 
     private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
@@ -45,13 +37,7 @@ internal static class DockedExecutionNoticeExperience
 
         var state = new State(window, main);
         Attached.Add(window, state);
-        main.PropertyChanged += state.OnPropertyChanged;
-        main.SuggestedChanges.PropertyChanged += state.OnPropertyChanged;
-        main.ExecutionCenter.PropertyChanged += state.OnPropertyChanged;
-        main.SuggestedChanges.Items.CollectionChanged += state.OnCollectionChanged;
-        main.ExecutionCenter.Items.CollectionChanged += state.OnCollectionChanged;
-        window.Closed += state.OnClosed;
-
+        state.Attach();
         window.Dispatcher.BeginInvoke(new Action(state.EnsureAndRefresh));
     }
 
@@ -61,24 +47,31 @@ internal static class DockedExecutionNoticeExperience
         var window = Window.GetWindow(element) as MainWindow;
         if (window is null || !Attached.TryGetValue(window, out var state)) return;
 
-        if (IsLegacyApprovedSurface(element))
+        if (IsLegacyApprovedCard(element))
         {
             element.Visibility = Visibility.Collapsed;
             element.IsHitTestVisible = false;
             element.Focusable = false;
             Panel.SetZIndex(element, -1000);
             state.EnsureAndRefresh();
-            return;
         }
-
-        if (Equals(element.Tag, "PrimaryWorkActionBar"))
+        else if (Equals(element.Tag, "PrimaryWorkActionBar"))
+        {
             state.EnsureAndRefresh();
+        }
     }
 
-    private static bool IsLegacyApprovedSurface(FrameworkElement element)
+    private static bool IsLegacyApprovedCard(FrameworkElement element)
     {
         if (element is not Border and not ContentControl) return false;
         if (Equals(element.Tag, "DockedExecutionNotice")) return false;
+
+        var tag = element.Tag?.ToString() ?? string.Empty;
+        if (tag.Contains("ApprovedChanges", StringComparison.OrdinalIgnoreCase)) return true;
+
+        // Never collapse large page containers merely because they contain the card.
+        if (element.ActualWidth > 900 || element.ActualHeight > 330) return false;
+        if (element.HorizontalAlignment == HorizontalAlignment.Stretch && double.IsNaN(element.Width)) return false;
 
         var text = ReadText(element);
         return ApprovedMarkers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
@@ -89,41 +82,35 @@ internal static class DockedExecutionNoticeExperience
         var values = new List<string>();
         foreach (var item in Enumerate<DependencyObject>(root))
         {
-            switch (item)
-            {
-                case TextBlock text when !string.IsNullOrWhiteSpace(text.Text):
-                    values.Add(text.Text);
-                    break;
-                case ContentControl control when control.Content is string value && !string.IsNullOrWhiteSpace(value):
-                    values.Add(value);
-                    break;
-            }
+            if (item is TextBlock text && !string.IsNullOrWhiteSpace(text.Text)) values.Add(text.Text);
+            else if (item is ContentControl control && control.Content is string value && !string.IsNullOrWhiteSpace(value)) values.Add(value);
         }
         return string.Join(' ', values);
-    }
-
-    private static IEnumerable<T> Enumerate<T>(DependencyObject root) where T : DependencyObject
-    {
-        if (root is T current) yield return current;
-        if (root is not Visual and not System.Windows.Media.Media3D.Visual3D) yield break;
-
-        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
-        {
-            var child = VisualTreeHelper.GetChild(root, index);
-            foreach (var nested in Enumerate<T>(child)) yield return nested;
-        }
     }
 
     private sealed class State(MainWindow window, MainWindowViewModel main)
     {
         private Border? _notice;
         private TextBlock? _message;
-        private Button? _open;
-        private Button? _close;
-        private int _dismissedApprovedCount = -1;
+        private int _dismissedCount = -1;
+
+        public void Attach()
+        {
+            main.PropertyChanged += OnPropertyChanged;
+            main.SuggestedChanges.PropertyChanged += OnPropertyChanged;
+            main.ExecutionCenter.PropertyChanged += OnPropertyChanged;
+            main.SuggestedChanges.Items.CollectionChanged += OnCollectionChanged;
+            main.ExecutionCenter.Items.CollectionChanged += OnCollectionChanged;
+            window.Closed += OnClosed;
+        }
 
         public void EnsureAndRefresh()
         {
+            if (!window.Dispatcher.CheckAccess())
+            {
+                window.Dispatcher.BeginInvoke(new Action(EnsureAndRefresh));
+                return;
+            }
             if (!window.IsLoaded || window.Content is not DependencyObject root) return;
 
             var actionBar = FindByTag<Border>(root, "PrimaryWorkActionBar");
@@ -136,7 +123,6 @@ internal static class DockedExecutionNoticeExperience
                 Panel.SetZIndex(_notice, 50);
                 grid.Children.Add(_notice);
             }
-
             Refresh();
         }
 
@@ -156,12 +142,7 @@ internal static class DockedExecutionNoticeExperience
                 Visibility = Visibility.Collapsed
             };
 
-            var panel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
+            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             _message = new TextBlock
             {
                 VerticalAlignment = VerticalAlignment.Center,
@@ -170,9 +151,9 @@ internal static class DockedExecutionNoticeExperience
                 Foreground = Brush("TextPrimaryBrush", Brushes.Black),
                 Margin = new Thickness(0, 0, 8, 0)
             };
-            panel.Children.Add(_message);
+            row.Children.Add(_message);
 
-            _open = new Button
+            var open = new Button
             {
                 Content = "Open Execution Center",
                 Height = 24,
@@ -180,15 +161,15 @@ internal static class DockedExecutionNoticeExperience
                 Margin = new Thickness(0, 0, 4, 0),
                 ToolTip = "Review, back up, execute and verify approved changes"
             };
-            _open.Click += async (_, _) =>
+            open.Click += async (_, _) =>
             {
                 await main.NavigateCommand.ExecuteAsync("Execution Center");
                 if (main.ExecutionCenter.LoadCommand.CanExecute(null))
                     await main.ExecutionCenter.LoadCommand.ExecuteAsync(null);
             };
-            panel.Children.Add(_open);
+            row.Children.Add(open);
 
-            _close = new Button
+            var close = new Button
             {
                 Content = "✕",
                 Width = 25,
@@ -197,48 +178,37 @@ internal static class DockedExecutionNoticeExperience
                 ToolTip = "Dismiss until the approved count changes",
                 Focusable = false
             };
-            _close.Click += (_, _) =>
+            close.Click += (_, _) =>
             {
-                _dismissedApprovedCount = CurrentApprovedCount();
+                _dismissedCount = CurrentCount();
                 shell.Visibility = Visibility.Collapsed;
                 shell.IsHitTestVisible = false;
             };
-            panel.Children.Add(_close);
-
-            shell.Child = panel;
+            row.Children.Add(close);
+            shell.Child = row;
             return shell;
         }
 
         private void Refresh()
         {
             if (_notice is null || _message is null) return;
-
-            var approved = CurrentApprovedCount();
-            var ready = main.ExecutionCenter.ReadyCount;
-            var count = Math.Max(approved, ready);
-            var shouldShow = count > 0 && count != _dismissedApprovedCount &&
-                             !main.CurrentPage.Equals("Execution Center", StringComparison.OrdinalIgnoreCase);
-
-            _message.Text = count == 1
-                ? "1 approved change ready"
-                : $"{count} approved changes ready";
-            _notice.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
-            _notice.IsHitTestVisible = shouldShow;
+            var count = CurrentCount();
+            var show = count > 0 && count != _dismissedCount &&
+                       !main.CurrentPage.Equals("Execution Center", StringComparison.OrdinalIgnoreCase);
+            _message.Text = count == 1 ? "1 approved change ready" : $"{count} approved changes ready";
+            _notice.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            _notice.IsHitTestVisible = show;
         }
 
-        private int CurrentApprovedCount() =>
-            Math.Max(main.SuggestedChanges.ApprovedCount, main.ExecutionCenter.ReadyCount);
+        private int CurrentCount() => Math.Max(main.SuggestedChanges.ApprovedCount, main.ExecutionCenter.ReadyCount);
 
         public void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName is nameof(MainWindowViewModel.CurrentPage) or
-                nameof(MainWindowViewModel.IsOperationRunning) or
-                "ApprovedCount" or "ReadyCount")
+            if (e.PropertyName is nameof(MainWindowViewModel.CurrentPage) or "ApprovedCount" or "ReadyCount")
                 EnsureAndRefresh();
         }
 
-        public void OnCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>
-            EnsureAndRefresh();
+        public void OnCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => EnsureAndRefresh();
 
         public void OnClosed(object? sender, EventArgs e)
         {
@@ -248,13 +218,21 @@ internal static class DockedExecutionNoticeExperience
             main.SuggestedChanges.Items.CollectionChanged -= OnCollectionChanged;
             main.ExecutionCenter.Items.CollectionChanged -= OnCollectionChanged;
             window.Closed -= OnClosed;
-
             if (_notice?.Parent is Panel parent) parent.Children.Remove(_notice);
             if (_notice is not null) _notice.Child = null;
             _notice = null;
             _message = null;
-            _open = null;
-            _close = null;
+        }
+    }
+
+    private static IEnumerable<T> Enumerate<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T current) yield return current;
+        if (root is not Visual and not System.Windows.Media.Media3D.Visual3D) yield break;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            foreach (var nested in Enumerate<T>(child)) yield return nested;
         }
     }
 
@@ -262,11 +240,9 @@ internal static class DockedExecutionNoticeExperience
     {
         if (root is T match && Equals(match.Tag, tag)) return match;
         if (root is not Visual and not System.Windows.Media.Media3D.Visual3D) return null;
-
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
         {
-            var child = VisualTreeHelper.GetChild(root, index);
-            var result = FindByTag<T>(child, tag);
+            var result = FindByTag<T>(VisualTreeHelper.GetChild(root, index), tag);
             if (result is not null) return result;
         }
         return null;
