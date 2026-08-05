@@ -97,11 +97,17 @@ namespace AIWordPressManager.Desktop
             @"Scheduled synchronization failed for (?<site>[0-9a-fA-F-]{36}): WordPressSync is paused after (?<failures>\d+) consecutive failures\. Try again in (?<minutes>\d+) minute\(s\), at (?<retry>.+?)\.",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-        private static readonly DispatcherTimer Timer = new() { Interval = TimeSpan.FromSeconds(15) };
+        private static readonly DispatcherTimer CountdownTimer = new()
+        {
+            Interval = TimeSpan.FromMinutes(1)
+        };
+
+        private static readonly List<FileSystemWatcher> Watchers = new();
         private static WeakReference<MainWindow>? _windowReference;
         private static Border? _alertBorder;
         private static string? _lastLogPath;
         private static DateTime _lastLogWriteUtc;
+        private static bool _refreshQueued;
 
         [ModuleInitializer]
         internal static void Initialize()
@@ -118,26 +124,94 @@ namespace AIWordPressManager.Desktop
             window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
             {
                 InstallAlert(window);
+                InstallLogWatchers(window);
                 RefreshAlert(window);
             }));
 
-            Timer.Stop();
-            Timer.Tick -= TimerOnTick;
-            Timer.Tick += TimerOnTick;
-            Timer.Start();
+            CountdownTimer.Stop();
+            CountdownTimer.Tick -= CountdownTimerOnTick;
+            CountdownTimer.Tick += CountdownTimerOnTick;
+
+            window.Closed += (_, _) =>
+            {
+                CountdownTimer.Stop();
+                DisposeWatchers();
+                _windowReference = null;
+                _alertBorder = null;
+            };
         }
 
-        private static void TimerOnTick(object? sender, EventArgs e)
+        private static void CountdownTimerOnTick(object? sender, EventArgs e)
         {
             if (_windowReference is null || !_windowReference.TryGetTarget(out var window) || !window.IsLoaded)
             {
-                Timer.Stop();
+                CountdownTimer.Stop();
                 return;
             }
 
-            if (window.DataContext is ViewModels.MainWindowViewModel viewModel)
-                viewModel.UpdateScheduledSyncCountdown();
-            RefreshAlert(window);
+            if (window.DataContext is not ViewModels.MainWindowViewModel viewModel || !viewModel.HasScheduledSyncPause)
+            {
+                CountdownTimer.Stop();
+                return;
+            }
+
+            viewModel.UpdateScheduledSyncCountdown();
+            if (_alertBorder is not null)
+                _alertBorder.Visibility = viewModel.HasScheduledSyncPause ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static void InstallLogWatchers(MainWindow window)
+        {
+            DisposeWatchers();
+            foreach (var directory in GetLogDirectories().Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var watcher = new FileSystemWatcher(directory, "*.log")
+                    {
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                        IncludeSubdirectories = false,
+                        EnableRaisingEvents = true
+                    };
+                    watcher.Created += (_, _) => QueueRefresh(window);
+                    watcher.Changed += (_, _) => QueueRefresh(window);
+                    watcher.Renamed += (_, _) => QueueRefresh(window);
+                    watcher.Deleted += (_, _) => QueueRefresh(window);
+                    Watchers.Add(watcher);
+                }
+                catch
+                {
+                    // Diagnostics must not interrupt startup when a log folder cannot be watched.
+                }
+            }
+        }
+
+        private static void QueueRefresh(MainWindow window)
+        {
+            if (_refreshQueued || !window.IsLoaded) return;
+            _refreshQueued = true;
+            window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                _refreshQueued = false;
+                if (window.IsLoaded) RefreshAlert(window);
+            }));
+        }
+
+        private static void DisposeWatchers()
+        {
+            foreach (var watcher in Watchers)
+            {
+                try
+                {
+                    watcher.EnableRaisingEvents = false;
+                    watcher.Dispose();
+                }
+                catch
+                {
+                    // Best-effort cleanup only.
+                }
+            }
+            Watchers.Clear();
         }
 
         private static void InstallAlert(MainWindow window)
@@ -203,6 +277,7 @@ namespace AIWordPressManager.Desktop
             {
                 viewModel.ApplyScheduledSyncPause(null);
                 _alertBorder.Visibility = Visibility.Collapsed;
+                CountdownTimer.Stop();
                 return;
             }
 
@@ -215,6 +290,15 @@ namespace AIWordPressManager.Desktop
             }
 
             _alertBorder.Visibility = viewModel.HasScheduledSyncPause ? Visibility.Visible : Visibility.Collapsed;
+            if (viewModel.HasScheduledSyncPause)
+            {
+                viewModel.UpdateScheduledSyncCountdown();
+                if (!CountdownTimer.IsEnabled) CountdownTimer.Start();
+            }
+            else
+            {
+                CountdownTimer.Stop();
+            }
         }
 
         private static ScheduledSyncPauseInfo? ReadLatestPause(string path)
@@ -256,18 +340,18 @@ namespace AIWordPressManager.Desktop
 
         private static string? FindLatestLog()
         {
-            var directories = new[]
-            {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIWordPressManager", "Logs"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AI WordPress Manager", "Logs"),
-                Path.Combine(AppContext.BaseDirectory, "Logs"),
-                Path.Combine(AppContext.BaseDirectory, "logs")
-            };
-
-            return directories.Where(Directory.Exists)
+            return GetLogDirectories().Where(Directory.Exists)
                 .SelectMany(directory => Directory.EnumerateFiles(directory, "*.log", SearchOption.TopDirectoryOnly))
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
+        }
+
+        private static IEnumerable<string> GetLogDirectories()
+        {
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIWordPressManager", "Logs");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AI WordPress Manager", "Logs");
+            yield return Path.Combine(AppContext.BaseDirectory, "Logs");
+            yield return Path.Combine(AppContext.BaseDirectory, "logs");
         }
 
         private static Brush ResolveBrush(FrameworkElement element, string key, Brush fallback)
