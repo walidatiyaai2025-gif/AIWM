@@ -23,6 +23,7 @@ public partial class App : System.Windows.Application
     private static readonly TimeSpan GlobalErrorRepeatWindow = TimeSpan.FromSeconds(10);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _recentGlobalErrors = new(StringComparer.Ordinal);
     private IHost? _host;
+    private bool _hostStarted;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -39,10 +40,11 @@ public partial class App : System.Windows.Application
         {
             progress.Report(StartupProgress.Create(10, "Building services", "Preparing dependency injection, logging, and configuration"));
             _host = CreateHostBuilder(e.Args).Build();
-
-            progress.Report(StartupProgress.Create(20, "Starting background services", "Starting the scheduler and application services"));
-            await _host.StartAsync();
             RegisterGlobalExceptionHandlers();
+
+            // Building the host makes DI available without starting hosted background
+            // services. Scheduled synchronization starts only after login and first render.
+            progress.Report(StartupProgress.Create(20, "Preparing application services", "Background services will start after the workspace is visible"));
 
             progress.Report(StartupProgress.Create(30, "Checking application folders", "Verifying logs, backups, documentation, and setup paths"));
             await RunStartupHealthChecksAsync(_host.Services, progress);
@@ -81,19 +83,18 @@ public partial class App : System.Windows.Application
             MainWindow.Show();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
 
-            // Non-essential workspaces are loaded by NavigateAsync when the user opens them.
-            // Avoid hydrating every ViewModel after startup because that competes with UI input,
-            // increases SQLite traffic, and retains collections the user may never need.
-
             progress.Report(StartupProgress.Create(100, "Ready", "AI WordPress Website Manager is ready"));
             var automationSettings = await _host.Services.GetRequiredService<AIWordPressManager.Application.Settings.IApplicationSettingsService>().GetAiAutomationSettingsAsync();
             var minimumSplash = TimeSpan.FromSeconds(Math.Max(3, automationSettings.MinimumSplashSeconds));
             var remainingSplash = minimumSplash - (DateTime.UtcNow - splashStartedAt);
-            if (remainingSplash > TimeSpan.Zero) await Task.Delay(remainingSplash);
+            if (remainingSplash > TimeSpan.Zero)
+                await Task.Delay(remainingSplash);
+
             splash.Close();
             ShutdownMode = ShutdownMode.OnMainWindowClose;
 
             _ = WriteStartupCompletedLogAsync(_host.Services);
+            _ = StartHostedServicesAfterUiIdleAsync();
         }
         catch (Exception exception)
         {
@@ -102,6 +103,29 @@ public partial class App : System.Windows.Application
             _host?.Services.GetService<GlobalErrorPresenter>()?.Show(exception, "Startup");
             try { splash.Close(); } catch { }
             Shutdown(-1);
+        }
+    }
+
+    private async Task StartHostedServicesAfterUiIdleAsync()
+    {
+        try
+        {
+            await Dispatcher.InvokeAsync(
+                () => { },
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            await Task.Delay(TimeSpan.FromMilliseconds(1500));
+
+            if (_host is null || _hostStarted || Dispatcher.HasShutdownStarted)
+                return;
+
+            await _host.StartAsync();
+            _hostStarted = true;
+            Log.Information("Hosted background services started after the desktop became idle.");
+        }
+        catch (Exception exception)
+        {
+            // Background-service startup must not block or cover the active workspace.
+            Log.Error(exception, "Hosted background services could not start after UI initialization.");
         }
     }
 
@@ -150,8 +174,6 @@ public partial class App : System.Windows.Application
 
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
-            // Background-task failures are logged, but they must not open a modal window
-            // or synchronously marshal back to the UI thread.
             ReportGlobalException(args.Exception, "Background Task", showToUser: false);
             args.SetObserved();
         };
@@ -211,11 +233,24 @@ public partial class App : System.Windows.Application
     {
         SystemSecuritySession.SignOut();
         try { ProcessTreeCleanup.KillDescendantsOfCurrentProcess(); } catch { }
+
         if (_host is not null)
         {
-            await _host.StopAsync(TimeSpan.FromSeconds(5));
+            if (_hostStarted)
+            {
+                try
+                {
+                    await _host.StopAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (Exception exception)
+                {
+                    Log.Warning(exception, "Hosted services did not stop cleanly.");
+                }
+            }
+
             _host.Dispose();
         }
+
         Log.CloseAndFlush();
         base.OnExit(e);
     }
