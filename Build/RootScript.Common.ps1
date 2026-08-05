@@ -3,32 +3,50 @@ Set-StrictMode -Version Latest
 function Resolve-AiwmSafePath {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [string]$Path
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Path,
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$FallbackPath
     )
 
-    $clean = $Path.Trim().Trim('"').Trim("'")
-    foreach ($invalid in [System.IO.Path]::GetInvalidPathChars()) {
-        $clean = $clean.Replace([string]$invalid, "")
+    $candidates = @($Path, $FallbackPath, $PSScriptRoot, (Get-Location).ProviderPath)
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+
+        $clean = $candidate.Trim().Trim('"').Trim("'")
+        if ([string]::IsNullOrWhiteSpace($clean)) { continue }
+
+        try {
+            $full = [System.IO.Path]::GetFullPath($clean)
+        }
+        catch {
+            continue
+        }
+
+        if (Test-Path -LiteralPath $full -PathType Container) {
+            return $full
+        }
     }
 
-    if ([string]::IsNullOrWhiteSpace($clean)) {
-        throw "Path is empty after sanitization."
-    }
-
-    return [System.IO.Path]::GetFullPath($clean)
+    throw "Could not resolve a valid project path."
 }
 
 function Initialize-AiwmScriptOutput {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
+        [AllowNull()]
+        [AllowEmptyString()]
         [string]$ProjectRoot,
         [Parameter(Mandatory)]
-        [string]$ScriptName
+        [string]$ScriptName,
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$FallbackRoot
     )
 
-    $root = Resolve-AiwmSafePath -Path $ProjectRoot
+    $root = Resolve-AiwmSafePath -Path $ProjectRoot -FallbackPath $FallbackRoot
     $outputRoot = Join-Path $root "Output"
     $latest = Join-Path $outputRoot "Latest"
     $historyRoot = Join-Path $outputRoot "History"
@@ -39,6 +57,7 @@ function Initialize-AiwmScriptOutput {
     }
 
     $safeName = [System.IO.Path]::GetFileNameWithoutExtension($ScriptName)
+    if ([string]::IsNullOrWhiteSpace($safeName)) { $safeName = "script" }
     $logName = "$safeName.log"
 
     [pscustomobject]@{
@@ -59,6 +78,7 @@ function Add-AiwmLog {
         [Parameter(Mandatory)][string]$Message
     )
 
+    if ($null -eq $Context) { return }
     Add-Content -LiteralPath $Context.LogPath -Value $Message -Encoding UTF8
     Add-Content -LiteralPath $Context.HistoryLogPath -Value $Message -Encoding UTF8
 }
@@ -92,5 +112,26 @@ function Complete-AiwmScriptOutput {
         catch {
             Write-Host "Output folder: $($Context.LatestOutput)" -ForegroundColor Yellow
         }
+    }
+}
+
+function Wait-AiwmBeforeExit {
+    [CmdletBinding()]
+    param(
+        [switch]$NoPause,
+        [string]$Message = "Press ENTER to close this window..."
+    )
+
+    if ($NoPause) { return }
+
+    Write-Host ""
+    Write-Host "==============================================" -ForegroundColor DarkCyan
+    Write-Host $Message -ForegroundColor Magenta
+    Write-Host "==============================================" -ForegroundColor DarkCyan
+
+    try { [void](Read-Host) }
+    catch {
+        try { [void]$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") }
+        catch { Start-Sleep -Seconds 15 }
     }
 }
