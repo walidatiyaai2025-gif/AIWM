@@ -7,24 +7,25 @@ set "PS_SCRIPT=%SCRIPT_DIR%Bootstrap-AIWM.ps1"
 
 if not exist "%PS_SCRIPT%" (
     echo.
-    echo [ERROR] Bootstrap-AIWM.ps1 was not found:
+    echo [ERROR] Bootstrap-AIWM.ps1 was not found beside this BAT file:
     echo %PS_SCRIPT%
     echo.
     pause
     exit /b 1
 )
 
-rem Default installation folder. Change this value if needed.
-set "INSTALL_ROOT=C:\Apps"
-
 echo.
 echo ============================================================
 echo  AI WordPress Manager - Prerequisites, Clone, Build and Run
 echo ============================================================
 echo.
+echo Working folder: %SCRIPT_DIR%
+echo.
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" -InstallRoot "%INSTALL_ROOT%"
+pushd "%SCRIPT_DIR%"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
 set "EXIT_CODE=%ERRORLEVEL%"
+popd
 
 echo.
 if not "%EXIT_CODE%"=="0" (
