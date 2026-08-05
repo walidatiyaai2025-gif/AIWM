@@ -1,0 +1,18 @@
+{
+  "sourceDocument": "AI_WordPress_Manager_Full_Execution_Task_Tracker_AR.docx",
+  "totalTasks": 296,
+  "batchSize": 100,
+  "batches": [
+    { "number": 1, "from": 1, "to": 100 },
+    { "number": 2, "from": 101, "to": 200 },
+    { "number": 3, "from": 201, "to": 296 }
+  ],
+  "completedRowColor": "E2F0D9",
+  "pendingRowColor": "FCE4EC",
+  "completedLabel": "مكتملة",
+  "alreadyCompletedLabel": "منفذة بالفعل قبل بدء التتبع",
+  "pendingLabel": "غير مكتملة",
+  "statusFile": "docs/task-tracker/TaskTracker.json",
+  "markdownFile": "docs/task-tracker/TaskTracker.md",
+  "wordUpdateScript": "Build/Update-TaskTrackerDocx.ps1"
+}
