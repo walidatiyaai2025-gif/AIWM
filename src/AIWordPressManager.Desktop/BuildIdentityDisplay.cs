@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -36,44 +37,53 @@ internal static class BuildIdentityDisplay
         footer.Text = DisplayText;
         footer.FontWeight = FontWeights.SemiBold;
         footer.Cursor = Cursors.Hand;
-        footer.ToolTip =
-            $"Application version: {Version}\n" +
-            $"Source branch: {Branch}\n" +
-            $"Source commit: {Commit}\n" +
-            $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}\n\n" +
-            "Click to copy complete build information.";
+        footer.ToolTip = BuildToolTip(
+            "Click to copy complete build information.\nCtrl+Click to create a diagnostic support ZIP.");
 
         if (!BoundFooters.TryGetValue(footer, out _))
         {
-            footer.MouseLeftButtonUp += CopyBuildIdentityToClipboard;
+            footer.MouseLeftButtonUp += HandleBuildIdentityClick;
             BoundFooters.Add(footer, new object());
         }
     }
 
-    private static void CopyBuildIdentityToClipboard(object sender, MouseButtonEventArgs args)
+    private static void HandleBuildIdentityClick(object sender, MouseButtonEventArgs args)
     {
         try
         {
             BuildIdentitySupportSnapshot.WriteOnce();
-            Clipboard.SetText(DiagnosticText);
-            if (sender is TextBlock footer)
+
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
-                footer.ToolTip =
-                    $"Build information copied.\n\n" +
-                    $"Application version: {Version}\n" +
-                    $"Source branch: {Branch}\n" +
-                    $"Source commit: {Commit}\n" +
-                    $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}";
+                var bundlePath = SupportBundleService.CreateBundle();
+                Clipboard.SetText(bundlePath);
+                Process.Start(new ProcessStartInfo(Path.GetDirectoryName(bundlePath)!) { UseShellExecute = true });
+
+                if (sender is TextBlock bundleFooter)
+                    bundleFooter.ToolTip = BuildToolTip($"Support bundle created and path copied:\n{bundlePath}");
+            }
+            else
+            {
+                Clipboard.SetText(DiagnosticText);
+                if (sender is TextBlock footer)
+                    footer.ToolTip = BuildToolTip("Build information copied.");
             }
 
             args.Handled = true;
         }
         catch
         {
-            // Clipboard access can fail when another process temporarily owns it.
-            // Build identity display must remain non-blocking.
+            // Clipboard, file, or shell access may be temporarily unavailable.
+            // Build identity actions must remain non-blocking.
         }
     }
+
+    private static string BuildToolTip(string actionText) =>
+        $"Application version: {Version}\n" +
+        $"Source branch: {Branch}\n" +
+        $"Source commit: {Commit}\n" +
+        $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}\n\n" +
+        actionText;
 
     private static TextBlock? FindFooterTextBlock(DependencyObject parent)
     {
