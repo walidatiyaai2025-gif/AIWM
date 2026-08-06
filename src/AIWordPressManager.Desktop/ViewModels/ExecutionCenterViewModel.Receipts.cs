@@ -12,15 +12,19 @@ public sealed partial class ExecutionCenterViewModel
     private readonly object _receiptSync = new();
     private string? _lastReceiptFingerprint;
     private IRelayCommand? _openLatestReceiptCommand;
+    private IRelayCommand? _openReceiptsFolderCommand;
 
     [ObservableProperty]
-    private string? _latestReceiptPath;
+    private string? _latestReceiptPath = FindLatestReceiptPath();
 
     [ObservableProperty]
-    private string _latestReceiptStatus = "No execution receipt has been created in this session.";
+    private string _latestReceiptStatus = BuildInitialReceiptStatus();
 
     public IRelayCommand OpenLatestReceiptCommand =>
-        _openLatestReceiptCommand ??= new RelayCommand(OpenLatestReceipt, () => File.Exists(LatestReceiptPath));
+        _openLatestReceiptCommand ??= new RelayCommand(OpenLatestReceipt, HasLatestReceipt);
+
+    public IRelayCommand OpenReceiptsFolderCommand =>
+        _openReceiptsFolderCommand ??= new RelayCommand(OpenReceiptsFolder);
 
     partial void OnLatestReceiptPathChanged(string? value)
         => _openLatestReceiptCommand?.NotifyCanExecuteChanged();
@@ -64,10 +68,7 @@ public sealed partial class ExecutionCenterViewModel
                 CompletedAtUtc: completedAtUtc,
                 ApplicationVersion: typeof(ExecutionCenterViewModel).Assembly.GetName().Version?.ToString() ?? "unknown");
 
-            var receiptsDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "AIWordPressManager",
-                "Receipts");
+            var receiptsDirectory = GetReceiptsDirectory();
             Directory.CreateDirectory(receiptsDirectory);
 
             var safeSiteName = SanitizeFileName(receipt.SiteName);
@@ -82,9 +83,11 @@ public sealed partial class ExecutionCenterViewModel
             };
             await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(receipt, options));
             await File.WriteAllTextAsync(htmlPath, BuildReceiptHtml(receipt, jsonPath));
+            await File.WriteAllTextAsync(Path.Combine(receiptsDirectory, "latest-receipt.txt"), htmlPath);
 
             LatestReceiptPath = htmlPath;
             LatestReceiptStatus = $"Execution receipt saved: {Path.GetFileName(htmlPath)}";
+            _openLatestReceiptCommand?.NotifyCanExecuteChanged();
         }
         catch (Exception exception)
         {
@@ -92,13 +95,82 @@ public sealed partial class ExecutionCenterViewModel
         }
     }
 
+    private bool HasLatestReceipt()
+    {
+        var resolved = ResolveLatestReceiptPath();
+        return !string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved);
+    }
+
     private void OpenLatestReceipt()
     {
-        if (string.IsNullOrWhiteSpace(LatestReceiptPath) || !File.Exists(LatestReceiptPath))
+        var resolved = ResolveLatestReceiptPath();
+        if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
+        {
+            LatestReceiptStatus = "No saved execution receipt is available yet.";
             return;
+        }
 
-        Process.Start(new ProcessStartInfo(LatestReceiptPath) { UseShellExecute = true });
+        LatestReceiptPath = resolved;
+        Process.Start(new ProcessStartInfo(resolved) { UseShellExecute = true });
     }
+
+    private void OpenReceiptsFolder()
+    {
+        var directory = GetReceiptsDirectory();
+        Directory.CreateDirectory(directory);
+        Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
+    }
+
+    private string? ResolveLatestReceiptPath()
+    {
+        if (!string.IsNullOrWhiteSpace(LatestReceiptPath) && File.Exists(LatestReceiptPath))
+            return LatestReceiptPath;
+
+        var latest = FindLatestReceiptPath();
+        if (!string.IsNullOrWhiteSpace(latest))
+            LatestReceiptPath = latest;
+
+        return latest;
+    }
+
+    private static string BuildInitialReceiptStatus()
+    {
+        var path = FindLatestReceiptPath();
+        return string.IsNullOrWhiteSpace(path)
+            ? "No execution receipt has been created yet."
+            : $"Latest saved receipt: {Path.GetFileName(path)}";
+    }
+
+    private static string? FindLatestReceiptPath()
+    {
+        try
+        {
+            var directory = GetReceiptsDirectory();
+            if (!Directory.Exists(directory))
+                return null;
+
+            var pointerPath = Path.Combine(directory, "latest-receipt.txt");
+            if (File.Exists(pointerPath))
+            {
+                var pointedPath = File.ReadAllText(pointerPath).Trim();
+                if (File.Exists(pointedPath))
+                    return pointedPath;
+            }
+
+            return Directory.EnumerateFiles(directory, "ExecutionReceipt_*.html")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetReceiptsDirectory() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AIWordPressManager",
+        "Receipts");
 
     private static bool IsReceiptTerminalState(string state) =>
         state.Equals("Completed", StringComparison.OrdinalIgnoreCase) ||
