@@ -94,6 +94,8 @@ internal static class EvidenceCenterFirstJourneyExperience
     private sealed class State(MainWindow window, MainWindowViewModel main)
     {
         private Border? _card;
+        private bool _isRefreshing;
+
         public void Attach()
         {
             main.PropertyChanged += OnChanged;
@@ -102,19 +104,31 @@ internal static class EvidenceCenterFirstJourneyExperience
             window.Closed += OnClosed;
             window.Dispatcher.BeginInvoke(new Action(Refresh));
         }
+
         private void OnChanged(object? sender, PropertyChangedEventArgs e) => Refresh();
+
         private void Refresh()
         {
-            main.EvidenceCenter.MergeExecutionReceipts();
-            main.EvidenceCenter.RefreshFirstJourneyReadiness();
-            _card ??= Install(window, main);
-            if (_card is not null)
+            if (_isRefreshing) return;
+            _isRefreshing = true;
+            try
             {
-                var visible = main.CurrentPage.Equals("Evidence Center", StringComparison.OrdinalIgnoreCase);
-                _card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                main.EvidenceCenter.MergeExecutionReceipts();
+                main.EvidenceCenter.RefreshFirstJourneyReadiness();
+                _card ??= Install(window, main);
+                if (_card is not null)
+                {
+                    var visible = main.CurrentPage.Equals("Evidence Center", StringComparison.OrdinalIgnoreCase);
+                    _card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                }
+                main.RefreshFirstJourneySidebar();
             }
-            main.RefreshFirstJourneySidebar();
+            finally
+            {
+                _isRefreshing = false;
+            }
         }
+
         private void OnClosed(object? sender, EventArgs e)
         {
             main.PropertyChanged -= OnChanged;
