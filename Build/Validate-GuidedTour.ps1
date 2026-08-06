@@ -54,7 +54,7 @@ foreach ($token in $requiredTourTokens) {
     }
 }
 
-foreach ($token in @('ShowGuidedTour(bool restart = false)', 'TryShowGuidedTourAfterStartup()', 'GuidedTourStateStore.Reset()')) {
+foreach ($token in @('ShowGuidedTour(bool restart = false)', 'App_OnActivated(', 'GuidedTourStateStore.Reset()')) {
     if (-not $appTour.Contains($token)) {
         throw "App guided-tour integration is missing: $token"
     }
@@ -66,8 +66,8 @@ foreach ($token in @('ResumeGuidedTourCommand', 'RestartGuidedTourCommand', 'app
     }
 }
 
-if (-not $appXaml.Contains('StartupCompleted="App_OnStartupCompleted"')) {
-    throw 'App.xaml does not trigger the post-login guided tour startup hook.'
+if (-not $appXaml.Contains('Activated="App_OnActivated"')) {
+    throw 'App.xaml does not trigger the post-login guided tour activation hook.'
 }
 
 Write-Host 'Guided tour workflow contracts validated successfully.' -ForegroundColor Green
