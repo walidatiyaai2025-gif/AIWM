@@ -3,8 +3,9 @@ using AIWordPressManager.Application.Abstractions;
 using AIWordPressManager.Application.Changes;
 using AIWordPressManager.Application.Settings;
 using AIWordPressManager.Automation.Visual;
-using AIWordPressManager.Desktop.ViewModels.Sites;
 using AIWordPressManager.Desktop.Services;
+using AIWordPressManager.Desktop.Services.Sites;
+using AIWordPressManager.Desktop.ViewModels.Sites;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -16,6 +17,7 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
     private readonly IApprovedChangeExecutionService _executionService;
     private readonly IDialogService _dialogs;
     private readonly SitesViewModel _sites;
+    private readonly ISiteOperationGuard _siteOperationGuard;
     private readonly IApplicationSettingsService _settings;
     private readonly VisualInspectionService _visualInspection;
     private readonly UiOperationService _operations;
@@ -63,6 +65,7 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
         IApprovedChangeExecutionService executionService,
         IDialogService dialogs,
         SitesViewModel sites,
+        ISiteOperationGuard siteOperationGuard,
         IApplicationSettingsService settings,
         VisualInspectionService visualInspection,
         UiOperationService operations)
@@ -71,6 +74,7 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
         _executionService = executionService;
         _dialogs = dialogs;
         _sites = sites;
+        _siteOperationGuard = siteOperationGuard;
         _settings = settings;
         _visualInspection = visualInspection;
         _operations = operations;
@@ -93,7 +97,17 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
         ShowRejectedCommand = new AsyncRelayCommand(() => SetQueueFilterAsync("Rejected"), CanWork);
         ShowAllCommand = new AsyncRelayCommand(() => SetQueueFilterAsync(null), CanWork);
         SelectedItems.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(SelectedCount)); OnPropertyChanged(nameof(SafeSelectedCount)); NotifyCommands(); };
-        _sites.SelectedSiteChanged += (_, _) => NotifyCommands();
+        _sites.SelectedSiteChanged += (_, _) =>
+        {
+            Items.Clear();
+            SelectedItems.Clear();
+            SelectedItem = null;
+            StatusMessage = _sites.SelectedSite is null
+                ? "Select a site, then generate proposals from local audit results."
+                : $"{_sites.SelectedSite.Name} selected. Load its isolated proposal queue.";
+            RaiseCounts();
+            NotifyCommands();
+        };
     }
 
     partial void OnSelectedItemChanged(SuggestedChangeItem? value)
@@ -106,22 +120,27 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
 
     public async Task LoadAsync()
     {
-        var site = _sites.SelectedSite;
-        if (site is null) { Items.Clear(); StatusMessage = "Select a site first."; return; }
+        if (_sites.SelectedSite is null) { Items.Clear(); StatusMessage = "Select a site first."; return; }
+        var lease = _siteOperationGuard.Begin("Loading suggested changes");
         IsBusy = true;
         using var operation = _operations.Begin(
             "Loading AI review",
             "Reading saved proposals",
-            $"Loading {ActiveQueueLabel.ToLowerInvariant()} for {site.Name}.",
+            $"Loading {ActiveQueueLabel.ToLowerInvariant()} for {lease.SiteName}.",
             20);
         try
         {
-            var rows = await _service.GetAsync(site.Id, StatusFilter);
+            var rows = await _service.GetAsync(lease.SiteId, StatusFilter);
+            _siteOperationGuard.EnsureCurrent(lease);
             _operations.Report(80, "Preparing review workspace", "Sorting proposals and refreshing counters.");
             Items.Clear(); SelectedItems.Clear(); foreach (var row in rows) Items.Add(row);
-            StatusMessage = $"Loaded {Items.Count} item(s) in {ActiveQueueLabel.ToLowerInvariant()}. Approval changes workflow state only; WordPress is not modified here.";
+            StatusMessage = $"Loaded {Items.Count} item(s) for {lease.SiteName} in {ActiveQueueLabel.ToLowerInvariant()}. Approval changes workflow state only; WordPress is not modified here.";
             RaiseCounts();
             OnPropertyChanged(nameof(ActiveQueueLabel));
+        }
+        catch (OperationCanceledException ex)
+        {
+            StatusMessage = ex.Message;
         }
         finally { IsBusy = false; }
     }
@@ -140,33 +159,45 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
 
     private async Task GenerateAsync()
     {
-        var site = _sites.SelectedSite; if (site is null) return;
+        if (_sites.SelectedSite is null) return;
+        var lease = _siteOperationGuard.Begin("Generating suggested changes");
         IsBusy = true;
         using var operation = _operations.Begin(
             "Generating AI review",
             "Reading audit findings",
-            $"Building safe, explainable proposals for {site.Name}. Navigation is locked until this step finishes.",
+            $"Building safe, explainable proposals for {lease.SiteName}. Navigation is locked until this step finishes.",
             10);
         try
         {
             _operations.Report(35, "Building proposals", "Converting SEO, content, link, and visual findings into actionable changes.");
-            var result = await _service.GenerateFromLocalInsightsAsync(site.Id);
+            var result = await _service.GenerateFromLocalInsightsAsync(lease.SiteId);
+            _siteOperationGuard.EnsureCurrent(lease);
             _operations.Report(70, "Applying automation policy", "Evaluating risk, approval, evidence, and verification requirements.");
             StatusMessage = $"Generated {result.Created} new proposals; {result.Existing} already existed; {result.TotalPending} await review.";
         }
+        catch (OperationCanceledException ex)
+        {
+            StatusMessage = ex.Message;
+            return;
+        }
         finally { IsBusy = false; }
         await LoadAsync();
+        _siteOperationGuard.EnsureCurrent(lease);
 
         var automation = await _settings.GetAiAutomationSettingsAsync();
+        _siteOperationGuard.EnsureCurrent(lease);
         if (automation.AutoRejectHighRiskAiActions)
         {
             foreach (var highRisk in Items.Where(x => x.RiskLevel.Equals("High", StringComparison.OrdinalIgnoreCase) && x.ApprovalStatus == "Pending").ToArray())
+            {
+                _siteOperationGuard.EnsureCurrent(lease);
                 await _service.SetApprovalStatusAsync(highRisk.Id, "Rejected");
+            }
         }
         if (IsAutomaticExecutionEnabled(automation))
         {
             var safe = Items.Where(IsSafeDirectAction).ToArray();
-            if (safe.Length > 0) await ExecuteAutomaticallyAsync(site, safe, automation);
+            if (safe.Length > 0) await ExecuteAutomaticallyAsync(lease, safe, automation);
         }
         else if (automation.AutoExecuteLowRiskAiActions)
         {
@@ -178,36 +209,42 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
     private async Task SetStatusAsync(string status)
     {
         if (SelectedItem is null) return;
+        var lease = _siteOperationGuard.Begin($"Marking a proposal as {status}");
         IsBusy = true;
-        try { await _service.SetApprovalStatusAsync(SelectedItem.Id, status); StatusMessage = $"Change marked as {status}. No WordPress operation was executed."; }
+        try
+        {
+            _siteOperationGuard.EnsureCurrent(lease);
+            await _service.SetApprovalStatusAsync(SelectedItem.Id, status);
+            _siteOperationGuard.EnsureCurrent(lease);
+            StatusMessage = $"Change marked as {status} for {lease.SiteName}. No WordPress operation was executed.";
+        }
+        catch (OperationCanceledException ex) { StatusMessage = ex.Message; }
         finally { IsBusy = false; }
         await LoadAsync();
     }
 
-
-
-
     private async Task SetItemStatusAsync(SuggestedChangeItem? item, string status)
     {
         if (item is null) return;
+        var lease = _siteOperationGuard.Begin($"Marking a proposal as {status}");
         SelectedItem = item;
         IsBusy = true;
         try
         {
+            _siteOperationGuard.EnsureCurrent(lease);
             await _service.SetApprovalStatusAsync(item.Id, status);
-            StatusMessage = $"Change marked as {status}. No WordPress operation was executed.";
+            _siteOperationGuard.EnsureCurrent(lease);
+            StatusMessage = $"Change marked as {status} for {lease.SiteName}. No WordPress operation was executed.";
         }
-        finally
-        {
-            IsBusy = false;
-        }
+        catch (OperationCanceledException ex) { StatusMessage = ex.Message; }
+        finally { IsBusy = false; }
         await LoadAsync();
     }
 
     private async Task ApplyNowAsync(SuggestedChangeItem? item)
     {
-        var site = _sites.SelectedSite;
-        if (site is null || item is null) return;
+        if (_sites.SelectedSite is null || item is null) return;
+        var lease = _siteOperationGuard.Begin("Applying an AI suggestion");
 
         if (!item.CanApplyDirectly)
         {
@@ -219,54 +256,66 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
                 string.Empty,
                 $"Reason: {item.CleanReason}");
 
-            await _dialogs.ShowInformationAsync(
-                "Specialist workflow required",
-                specialistMessage);
+            await _dialogs.ShowInformationAsync("Specialist workflow required", specialistMessage);
             return;
         }
 
         var confirmed = await _dialogs.ConfirmAsync(
             "Apply AI suggestion",
-            $"Apply this {item.ChangeType} suggestion now?\n\nCurrent:\n{item.CurrentValue}\n\nAI suggestion ({item.AiProvider}):\n{item.ProposedValue}\n\nThe change will be approved, backed up, sent to WordPress, and verified.");
+            $"Apply this {item.ChangeType} suggestion to {lease.SiteName} now?\n\nCurrent:\n{item.CurrentValue}\n\nAI suggestion ({item.AiProvider}):\n{item.ProposedValue}\n\nThe change will be approved, backed up, sent to WordPress, and verified.");
         if (!confirmed) return;
+        _siteOperationGuard.EnsureCurrent(lease);
 
         IsBusy = true;
         using var operation = _operations.Begin(
             "Executing approved WordPress change",
             "Preparing safety controls",
-            $"Creating evidence and executing {item.ChangeType} for {site.Name}. The application is locked to preserve execution context.",
+            $"Creating evidence and executing {item.ChangeType} for {lease.SiteName}. The application is locked to preserve execution context.",
             5);
         try
         {
             var automation = await _settings.GetAiAutomationSettingsAsync();
+            _siteOperationGuard.EnsureCurrent(lease);
             _operations.Report(20, "Capturing before evidence", "Preparing the current-state evidence and execution backup.");
-            if (automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(site.SiteUrl, "before");
+            if (automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(lease.SiteUrl, "before", lease);
+            _siteOperationGuard.EnsureCurrent(lease);
             await _service.SetApprovalStatusAsync(item.Id, "Approved");
-            var progress = new Progress<(int Percent, string Step)>(p => StatusMessage = $"{p.Percent}% — {p.Step}");
-            var result = await _executionService.ExecuteAsync(site.Id, [item.Id], progress);
+            _siteOperationGuard.EnsureCurrent(lease);
+            var progress = new Progress<(int Percent, string Step)>(p =>
+            {
+                if (_siteOperationGuard.IsCurrent(lease)) StatusMessage = $"{p.Percent}% — {p.Step}";
+            });
+            var result = await _executionService.ExecuteAsync(lease.SiteId, [item.Id], progress);
+            _siteOperationGuard.EnsureCurrent(lease);
             StatusMessage = result.IsSuccess
                 ? $"Applied and verified {result.Value.Verified} change(s). Failed: {result.Value.Failed}; skipped: {result.Value.Skipped}."
                 : result.Error.Message;
 
-            if (result.IsSuccess && result.Value.Verified > 0 && automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(site.SiteUrl, "after");
+            if (result.IsSuccess && result.Value.Verified > 0 && automation.CaptureBeforeAfterEvidence)
+                await CaptureEvidenceAsync(lease.SiteUrl, "after", lease);
 
+            _siteOperationGuard.EnsureCurrent(lease);
             if (result.IsFailure || result.Value.Verified == 0)
                 await _dialogs.ShowErrorAsync("Suggestion was not applied", StatusMessage);
             else
-                await _dialogs.ShowInformationAsync("Suggestion applied", $"The {item.ChangeType} suggestion from {item.AiProvider} was applied and verified successfully.");
+                await _dialogs.ShowInformationAsync("Suggestion applied", $"The {item.ChangeType} suggestion from {item.AiProvider} was applied and verified successfully for {lease.SiteName}.");
+        }
+        catch (OperationCanceledException ex)
+        {
+            StatusMessage = ex.Message;
+            await _dialogs.ShowErrorAsync("Execution cancelled safely", ex.Message);
         }
         finally
         {
             IsBusy = false;
-            await LoadAsync();
+            if (_siteOperationGuard.IsCurrent(lease)) await LoadAsync();
         }
     }
 
     private async Task ApplySafeSelectedAsync()
     {
-        var site = _sites.SelectedSite;
-        if (site is null) return;
-
+        if (_sites.SelectedSite is null) return;
+        var lease = _siteOperationGuard.Begin("Applying selected safe suggestions");
         var safe = SelectedItems.Where(IsSafeDirectAction).ToArray();
         if (safe.Length == 0) return;
 
@@ -274,20 +323,29 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
         if (safe.Length > 8) summary += $"\n• …and {safe.Length - 8} more";
         var confirmed = await _dialogs.ConfirmAsync(
             "Apply safe selected changes",
-            $"Apply {safe.Length} low-risk direct changes?\n\n{summary}\n\nThe application will approve them, create a backup, execute them on WordPress, and verify the saved values.");
+            $"Apply {safe.Length} low-risk direct changes to {lease.SiteName}?\n\n{summary}\n\nThe application will approve them, create a backup, execute them on WordPress, and verify the saved values.");
         if (!confirmed) return;
+        _siteOperationGuard.EnsureCurrent(lease);
 
         IsBusy = true;
         try
         {
             foreach (var item in safe)
+            {
+                _siteOperationGuard.EnsureCurrent(lease);
                 if (!item.ApprovalStatus.Equals("Approved", StringComparison.OrdinalIgnoreCase))
                     await _service.SetApprovalStatusAsync(item.Id, "Approved");
+            }
 
-            var progress = new Progress<(int Percent, string Step)>(p => StatusMessage = $"{p.Percent}% — {p.Step}");
-            var result = await _executionService.ExecuteAsync(site.Id, safe.Select(x => x.Id).ToArray(), progress);
+            _siteOperationGuard.EnsureCurrent(lease);
+            var progress = new Progress<(int Percent, string Step)>(p =>
+            {
+                if (_siteOperationGuard.IsCurrent(lease)) StatusMessage = $"{p.Percent}% — {p.Step}";
+            });
+            var result = await _executionService.ExecuteAsync(lease.SiteId, safe.Select(x => x.Id).ToArray(), progress);
+            _siteOperationGuard.EnsureCurrent(lease);
             StatusMessage = result.IsSuccess
-                ? $"Safe batch completed. Verified: {result.Value.Verified}; failed: {result.Value.Failed}; skipped: {result.Value.Skipped}."
+                ? $"Safe batch completed for {lease.SiteName}. Verified: {result.Value.Verified}; failed: {result.Value.Failed}; skipped: {result.Value.Skipped}."
                 : result.Error.Message;
 
             if (result.IsFailure || result.Value.Verified == 0)
@@ -295,28 +353,50 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
             else
                 await _dialogs.ShowInformationAsync("Safe batch completed", StatusMessage);
         }
+        catch (OperationCanceledException ex)
+        {
+            StatusMessage = ex.Message;
+            await _dialogs.ShowErrorAsync("Batch cancelled safely", ex.Message);
+        }
         finally
         {
             IsBusy = false;
-            await LoadAsync();
+            if (_siteOperationGuard.IsCurrent(lease)) await LoadAsync();
         }
     }
 
-    private async Task ExecuteAutomaticallyAsync(SiteCardViewModel site, IReadOnlyCollection<SuggestedChangeItem> safe, AiAutomationSettings automation)
+    private async Task ExecuteAutomaticallyAsync(SiteOperationLease lease, IReadOnlyCollection<SuggestedChangeItem> safe, AiAutomationSettings automation)
     {
         IsBusy = true;
         try
         {
-            StatusMessage = $"AI policy approved {safe.Count} low-risk action(s). Capturing evidence and executing now…";
-            if (automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(site.SiteUrl, "before-auto");
-            foreach (var item in safe) await _service.SetApprovalStatusAsync(item.Id, "Approved");
-            var result = await _executionService.ExecuteAsync(site.Id, safe.Select(x => x.Id).ToArray(), new Progress<(int Percent, string Step)>(p => StatusMessage = $"{p.Percent}% — {p.Step}"));
+            _siteOperationGuard.EnsureCurrent(lease);
+            StatusMessage = $"AI policy approved {safe.Count} low-risk action(s) for {lease.SiteName}. Capturing evidence and executing now…";
+            if (automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(lease.SiteUrl, "before-auto", lease);
+            foreach (var item in safe)
+            {
+                _siteOperationGuard.EnsureCurrent(lease);
+                await _service.SetApprovalStatusAsync(item.Id, "Approved");
+            }
+            _siteOperationGuard.EnsureCurrent(lease);
+            var result = await _executionService.ExecuteAsync(
+                lease.SiteId,
+                safe.Select(x => x.Id).ToArray(),
+                new Progress<(int Percent, string Step)>(p =>
+                {
+                    if (_siteOperationGuard.IsCurrent(lease)) StatusMessage = $"{p.Percent}% — {p.Step}";
+                }));
+            _siteOperationGuard.EnsureCurrent(lease);
             if (result.IsSuccess && result.Value.Verified > 0)
             {
-                if (automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(site.SiteUrl, "after-auto");
-                StatusMessage = $"AI execution completed with verified results: {result.Value.Verified}; failed: {result.Value.Failed}; skipped: {result.Value.Skipped}.";
+                if (automation.CaptureBeforeAfterEvidence) await CaptureEvidenceAsync(lease.SiteUrl, "after-auto", lease);
+                StatusMessage = $"AI execution completed for {lease.SiteName} with verified results: {result.Value.Verified}; failed: {result.Value.Failed}; skipped: {result.Value.Skipped}.";
             }
             else StatusMessage = result.IsFailure ? result.Error.Message : "AI execution did not produce a verified WordPress result.";
+        }
+        catch (OperationCanceledException ex)
+        {
+            StatusMessage = ex.Message;
         }
         catch (Exception ex)
         {
@@ -325,12 +405,21 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
         finally { IsBusy = false; }
     }
 
-    private async Task CaptureEvidenceAsync(string siteUrl, string stage)
+    private async Task CaptureEvidenceAsync(string siteUrl, string stage, SiteOperationLease lease)
     {
         try
         {
+            _siteOperationGuard.EnsureCurrent(lease);
             StatusMessage = $"Capturing {stage} website evidence…";
-            await _visualInspection.InspectAsync(siteUrl, new Progress<VisualInspectionProgress>(p => StatusMessage = $"{p.Percent}% — {stage}: {p.Step}"));
+            await _visualInspection.InspectAsync(siteUrl, new Progress<VisualInspectionProgress>(p =>
+            {
+                if (_siteOperationGuard.IsCurrent(lease)) StatusMessage = $"{p.Percent}% — {stage}: {p.Step}";
+            }));
+            _siteOperationGuard.EnsureCurrent(lease);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -386,22 +475,29 @@ public sealed partial class SuggestedChangesViewModel : ObservableObject
     {
         var selected = SelectedItems.ToArray();
         if (selected.Length == 0) return;
+        var lease = _siteOperationGuard.Begin($"Marking selected proposals as {status}");
 
         var riskSummary = $"Low: {selected.Count(x => x.RiskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase))}, " +
                           $"Medium: {selected.Count(x => x.RiskLevel.Equals("Medium", StringComparison.OrdinalIgnoreCase))}, " +
                           $"High: {selected.Count(x => x.RiskLevel.Equals("High", StringComparison.OrdinalIgnoreCase))}";
         var confirmed = await _dialogs.ConfirmAsync(
             $"{status} selected proposals",
-            $"Mark {selected.Length} selected proposal(s) as {status}?\n\n{riskSummary}\n\nThis changes approval state only and does not write to WordPress.");
+            $"Mark {selected.Length} selected proposal(s) for {lease.SiteName} as {status}?\n\n{riskSummary}\n\nThis changes approval state only and does not write to WordPress.");
         if (!confirmed) return;
+        _siteOperationGuard.EnsureCurrent(lease);
 
         IsBusy = true;
         try
         {
             foreach (var item in selected)
+            {
+                _siteOperationGuard.EnsureCurrent(lease);
                 await _service.SetApprovalStatusAsync(item.Id, status);
-            StatusMessage = $"{selected.Length} changes marked as {status}. No WordPress operation was executed.";
+            }
+            _siteOperationGuard.EnsureCurrent(lease);
+            StatusMessage = $"{selected.Length} changes marked as {status} for {lease.SiteName}. No WordPress operation was executed.";
         }
+        catch (OperationCanceledException ex) { StatusMessage = ex.Message; }
         finally { IsBusy = false; }
         await LoadAsync();
     }

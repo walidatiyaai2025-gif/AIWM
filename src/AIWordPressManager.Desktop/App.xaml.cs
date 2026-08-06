@@ -277,6 +277,7 @@ public partial class App : System.Windows.Application
             AIWordPressManager.WordPress.DependencyInjection.AddWordPress(services);
             AIWordPressManager.AI.DependencyInjection.AddAi(services);
             services.AddSingleton<AIWordPressManager.Desktop.Services.Sites.ICurrentSiteContext, AIWordPressManager.Desktop.Services.Sites.CurrentSiteContext>();
+            services.AddSingleton<AIWordPressManager.Desktop.Services.Sites.ISiteOperationGuard, AIWordPressManager.Desktop.Services.Sites.SiteOperationGuard>();
             services.AddSingleton<AddSiteWizardValidator>();
             services.AddTransient<AddSiteWizardViewModel>();
             services.AddSingleton<SitesViewModel>();
