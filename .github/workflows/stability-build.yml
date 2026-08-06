@@ -29,6 +29,10 @@ jobs:
         shell: pwsh
         run: dotnet --info
 
+      - name: Validate dashboard journey contracts
+        shell: pwsh
+        run: .\Build\Validate-DashboardJourneyState.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
