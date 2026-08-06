@@ -57,8 +57,10 @@ foreach ($token in @(
 
 foreach ($token in @(
     '[RelayCommand]',
-    'CopySupportSummary',
+    'CopySupportSummaryAsync',
     'AI WordPress Manager Support Summary',
+    'Generated UTC:',
+    'Environment.MachineName',
     'BuildIdentityDisplay.Version',
     'BuildIdentityDisplay.Branch',
     'BuildIdentityDisplay.FullCommit',
@@ -67,7 +69,9 @@ foreach ($token in @(
     'LatestSupportBundlePath',
     'BuildIdentitySupportSnapshot.SnapshotPath',
     'Clipboard.SetText(summary)',
-    'Support summary copied to the clipboard.'
+    'Support summary copied to the clipboard.',
+    'Cannot copy support summary',
+    '_dialogService.ShowErrorAsync'
 )) {
     if (-not $supportSummary.Contains($token)) {
         throw "Copy support summary workflow is missing contract token: $token"
@@ -91,4 +95,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Localization-safe Help Support & Diagnostics panel, support summary, status, path, retries, and command contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Localization-safe Help Support & Diagnostics panel, resilient support summary, status, path, retries, and command contracts validated successfully.' -ForegroundColor Green
