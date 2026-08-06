@@ -46,6 +46,16 @@ $requiredTourTokens = @(
     'GuidedTourStateStore.Save(',
     'OpenCurrentStep()',
     '_viewModel.NavigateCommand.Execute',
+    'ValidateStep(',
+    'TourGate.SiteSelected',
+    'TourGate.Synchronized',
+    'TourGate.AuditCompleted',
+    'TourGate.SuggestionsGenerated',
+    'TourGate.ApprovalCompleted',
+    'TourGate.ExecutionCompleted',
+    'TourGate.VerificationCompleted',
+    '_next.IsEnabled = validation.IsComplete',
+    'Check step',
     'Site → Sync → Audit → Recommend → Approve → Backup → Execute → Verify'
 )
 foreach ($token in $requiredTourTokens) {
