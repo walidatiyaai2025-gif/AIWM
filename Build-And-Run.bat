@@ -104,12 +104,13 @@ dotnet restore "%SOLUTION%" --force --disable-parallel --nologo >>"%LOG_FILE%" 2
 if errorlevel 1 goto :restore_failed
 
 echo [9/10] Building the Debug solution...
-dotnet build "%SOLUTION%" -c Debug --no-restore --nologo --maxcpucount:1 >>"%LOG_FILE%" 2>&1
+dotnet build "%SOLUTION%" -c Debug --no-restore --nologo --maxcpucount:1 /p:SourceBranchName="%TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
 echo [10/10] Starting AI WordPress Manager Desktop...
 echo.
 >>"%LOG_FILE%" echo Build succeeded: %DATE% %TIME%
+>>"%LOG_FILE%" echo Embedded source branch: %TARGET_BRANCH%
 >>"%LOG_FILE%" echo Commit:
 git log -1 --oneline >>"%LOG_FILE%" 2>&1
 
