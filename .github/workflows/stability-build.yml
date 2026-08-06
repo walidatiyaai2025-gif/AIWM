@@ -45,6 +45,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-SiteOperationGuard.ps1
 
+      - name: Validate execution receipts and audit trail
+        shell: pwsh
+        run: .\Build\Validate-ExecutionReceipts.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
