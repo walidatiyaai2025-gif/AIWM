@@ -30,9 +30,11 @@ public sealed partial class ExecutionCenterViewModel
         !string.IsNullOrWhiteSpace(LatestReceiptPath) && File.Exists(LatestReceiptPath);
 
     public bool HasExecutionEvidence =>
-        !string.IsNullOrWhiteSpace(BeforeEvidencePath) ||
-        !string.IsNullOrWhiteSpace(AfterEvidencePath) ||
-        EvidenceStatus.Contains("evidence", StringComparison.OrdinalIgnoreCase);
+        (!string.IsNullOrWhiteSpace(BeforeEvidencePath) && File.Exists(BeforeEvidencePath)) ||
+        (!string.IsNullOrWhiteSpace(AfterEvidencePath) && File.Exists(AfterEvidencePath)) ||
+        EvidenceStatus.Contains("captured", StringComparison.OrdinalIgnoreCase) ||
+        EvidenceStatus.Contains("saved", StringComparison.OrdinalIgnoreCase) ||
+        EvidenceStatus.Contains("backup", StringComparison.OrdinalIgnoreCase);
 
     internal void RefreshFirstJourneyReadiness()
     {
