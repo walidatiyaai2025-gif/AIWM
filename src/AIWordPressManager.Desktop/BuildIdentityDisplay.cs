@@ -1,6 +1,8 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace AIWordPressManager.Desktop;
@@ -8,11 +10,18 @@ namespace AIWordPressManager.Desktop;
 internal static class BuildIdentityDisplay
 {
     private const string FooterMarker = "AI WordPress Website Manager • Offline-first";
+    private static readonly ConditionalWeakTable<TextBlock, object> BoundFooters = new();
 
     public static string Version { get; } = ResolveVersion();
     public static string Branch { get; } = ResolveMetadata("SourceBranch", "unknown");
-    public static string Commit { get; } = ResolveCommit();
+    public static string FullCommit { get; } = ResolveMetadata("SourceCommit", "unknown");
+    public static string Commit { get; } = FullCommit.Length > 8 ? FullCommit[..8] : FullCommit;
     public static string DisplayText => $"Version {Version} • Branch {Branch}";
+    public static string DiagnosticText =>
+        $"AI WordPress Manager{Environment.NewLine}" +
+        $"Version: {Version}{Environment.NewLine}" +
+        $"Branch: {Branch}{Environment.NewLine}" +
+        $"Commit: {FullCommit}";
 
     public static void Apply(Window window)
     {
@@ -24,7 +33,41 @@ internal static class BuildIdentityDisplay
 
         footer.Text = DisplayText;
         footer.FontWeight = FontWeights.SemiBold;
-        footer.ToolTip = $"Application version: {Version}\nSource branch: {Branch}\nSource commit: {Commit}";
+        footer.Cursor = Cursors.Hand;
+        footer.ToolTip =
+            $"Application version: {Version}\n" +
+            $"Source branch: {Branch}\n" +
+            $"Source commit: {Commit}\n\n" +
+            "Click to copy complete build information.";
+
+        if (!BoundFooters.TryGetValue(footer, out _))
+        {
+            footer.MouseLeftButtonUp += CopyBuildIdentityToClipboard;
+            BoundFooters.Add(footer, new object());
+        }
+    }
+
+    private static void CopyBuildIdentityToClipboard(object sender, MouseButtonEventArgs args)
+    {
+        try
+        {
+            Clipboard.SetText(DiagnosticText);
+            if (sender is TextBlock footer)
+            {
+                footer.ToolTip =
+                    $"Build information copied.\n\n" +
+                    $"Application version: {Version}\n" +
+                    $"Source branch: {Branch}\n" +
+                    $"Source commit: {Commit}";
+            }
+
+            args.Handled = true;
+        }
+        catch
+        {
+            // Clipboard access can fail when another process temporarily owns it.
+            // Build identity display must remain non-blocking.
+        }
     }
 
     private static TextBlock? FindFooterTextBlock(DependencyObject parent)
@@ -52,12 +95,6 @@ internal static class BuildIdentityDisplay
             return informational.Split('+')[0];
 
         return assembly.GetName().Version?.ToString(3) ?? "unknown";
-    }
-
-    private static string ResolveCommit()
-    {
-        var value = ResolveMetadata("SourceCommit", "unknown");
-        return value.Length > 8 ? value[..8] : value;
     }
 
     private static string ResolveMetadata(string key, string fallback)
