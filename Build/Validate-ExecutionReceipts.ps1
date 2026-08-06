@@ -11,10 +11,11 @@ $appPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\App.GuidedTour.cs
 $identityPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDisplay.cs'
 $diagnosticsPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDiagnostics.cs'
 $snapshotPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentitySupportSnapshot.cs'
+$bundlePath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\SupportBundleService.cs'
 $projectPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj'
 $buildRunPath = Join-Path $repoRoot 'Build-And-Run.bat'
 
-foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diagnosticsPath, $snapshotPath, $projectPath, $buildRunPath)) {
+foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diagnosticsPath, $snapshotPath, $bundlePath, $projectPath, $buildRunPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Missing execution receipt or build identity contract file: $path"
     }
@@ -26,6 +27,7 @@ $app = Get-Content -LiteralPath $appPath -Raw
 $identity = Get-Content -LiteralPath $identityPath -Raw
 $diagnostics = Get-Content -LiteralPath $diagnosticsPath -Raw
 $snapshot = Get-Content -LiteralPath $snapshotPath -Raw
+$bundle = Get-Content -LiteralPath $bundlePath -Raw
 $project = Get-Content -LiteralPath $projectPath -Raw
 $buildRun = Get-Content -LiteralPath $buildRunPath -Raw
 
@@ -77,9 +79,11 @@ foreach ($token in @(
     'BuildIdentitySupportSnapshot.WriteOnce()',
     'BuildIdentitySupportSnapshot.SnapshotPath',
     'Clipboard.SetText(DiagnosticText)',
-    'MouseLeftButtonUp += CopyBuildIdentityToClipboard',
+    'MouseLeftButtonUp += HandleBuildIdentityClick',
+    'SupportBundleService.CreateBundle()',
+    'ModifierKeys.Control',
     'Cursors.Hand',
-    'Click to copy complete build information.',
+    'Ctrl+Click to create a diagnostic support ZIP.',
     'AssemblyMetadataAttribute',
     'SourceBranch',
     'SourceCommit',
@@ -114,6 +118,22 @@ foreach ($token in @(
 )) {
     if (-not $snapshot.Contains($token)) {
         throw "Persistent support snapshot is missing contract token: $token"
+    }
+}
+
+foreach ($token in @(
+    'SupportBundles',
+    'ZipFile.Open',
+    'build-identity.txt',
+    'support-snapshot.txt',
+    'startup-history.log',
+    'application-*.log',
+    'ExecutionReceipt_*.*',
+    'FileShare.ReadWrite',
+    'BuildIdentityDisplay.Commit'
+)) {
+    if (-not $bundle.Contains($token)) {
+        throw "Diagnostic support bundle is missing contract token: $token"
     }
 }
 
@@ -153,4 +173,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, copyable build identity, diagnostics logging, and support snapshot contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, build identity, diagnostics logging, support snapshot, and ZIP bundle contracts validated successfully.' -ForegroundColor Green
