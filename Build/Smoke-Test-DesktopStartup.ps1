@@ -40,6 +40,9 @@ $process = Start-Process `
     -RedirectStandardOutput $stdoutPath `
     -RedirectStandardError $stderrPath
 
+$observedWindowTitles = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+$loginWindowObserved = $false
+
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, $ObservationSeconds))
     while ([DateTime]::UtcNow -lt $deadline) {
@@ -58,9 +61,32 @@ STDERR:
 $stderr
 "@
         }
+
+        $title = $process.MainWindowTitle
+        if (-not [string]::IsNullOrWhiteSpace($title)) {
+            [void]$observedWindowTitles.Add($title)
+            if ($title -match '(?i)sign\s*in|login|تسجيل\s*الدخول') {
+                $loginWindowObserved = $true
+            }
+        }
     }
 
-    Write-Host "Startup smoke test passed. Process remained alive for $ObservationSeconds seconds." -ForegroundColor Green
+    if (-not $loginWindowObserved) {
+        $titles = if ($observedWindowTitles.Count -gt 0) {
+            [string]::Join('; ', $observedWindowTitles)
+        }
+        else {
+            '<none>'
+        }
+
+        throw @"
+Desktop process remained alive, but the login window was not observed.
+Observed window titles: $titles
+This can indicate a startup or splash-screen hang.
+"@
+    }
+
+    Write-Host "Startup smoke test passed. Login window was observed and the process remained alive for $ObservationSeconds seconds." -ForegroundColor Green
 }
 finally {
     if (-not $process.HasExited) {
