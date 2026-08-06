@@ -60,7 +60,7 @@ foreach ($token in @('ShowGuidedTour(bool restart = false)', 'App_OnActivated(',
     }
 }
 
-foreach ($token in @('ResumeGuidedTourCommand', 'RestartGuidedTourCommand', 'app.ShowGuidedTour(restart)')) {
+foreach ($token in @('ResumeGuidedTourCommand', 'RestartGuidedTourCommand', 'App.ShowGuidedTour(restart)')) {
     if (-not $help.Contains($token)) {
         throw "Help center is missing guided-tour access: $token"
     }
