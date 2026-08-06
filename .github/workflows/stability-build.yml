@@ -1,0 +1,51 @@
+name: Stability Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows .NET 8 Build
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Display SDK information
+        shell: pwsh
+        run: dotnet --info
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore .\AIWordPressManager.sln --force --nologo
+
+      - name: Build solution
+        shell: pwsh
+        run: dotnet build .\AIWordPressManager.sln -c Debug --no-restore --nologo -p:ContinuousIntegrationBuild=true
+
+      - name: Test non-WPF projects
+        shell: pwsh
+        run: dotnet test .\AIWordPressManager.sln -c Debug --no-build --nologo --filter "FullyQualifiedName!~UI" --logger "trx;LogFileName=stability-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stability-test-results
+          path: '**/TestResults/*.trx'
+          if-no-files-found: ignore
+          retention-days: 7
