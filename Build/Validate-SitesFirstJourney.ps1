@@ -7,10 +7,11 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $statePath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\Sites\SitesViewModel.FirstJourney.cs'
 $experiencePath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\SitesFirstJourneyExperience.cs'
+$gatePath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\SitesJourneyGateCoordinator.cs'
 $sitesPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\Sites\SitesViewModel.cs'
 $wizardPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\Sites\AddSiteWizardViewModel.cs'
 
-foreach ($path in @($statePath, $experiencePath, $sitesPath, $wizardPath)) {
+foreach ($path in @($statePath, $experiencePath, $gatePath, $sitesPath, $wizardPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Missing Sites first journey contract file: $path"
     }
@@ -18,6 +19,7 @@ foreach ($path in @($statePath, $experiencePath, $sitesPath, $wizardPath)) {
 
 $state = Get-Content -LiteralPath $statePath -Raw
 $experience = Get-Content -LiteralPath $experiencePath -Raw
+$gate = Get-Content -LiteralPath $gatePath -Raw
 $sites = Get-Content -LiteralPath $sitesPath -Raw
 $wizard = Get-Content -LiteralPath $wizardPath -Raw
 
@@ -61,6 +63,21 @@ foreach ($token in @(
 }
 
 foreach ($token in @(
+    'SitesJourneyGateCoordinator',
+    'ApplySitesJourneyGate',
+    'CurrentJourneyStepTitle = "Complete Sites setup"',
+    'CurrentJourneyActionLabel = "Open Sites"',
+    'CurrentJourneyTarget = "Sites"',
+    'Sites.IsFirstJourneyReady',
+    'DispatcherPriority.ContextIdle',
+    'RefreshFirstJourneySidebar'
+)) {
+    if (-not $gate.Contains($token)) {
+        throw "Sites central journey gate is missing contract token: $token"
+    }
+}
+
+foreach ($token in @(
     'AddSiteCommand',
     'SelectSiteCommand',
     'RetestSelectedSiteCommand',
@@ -88,4 +105,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Sites page first journey readiness, wizard, selection, connection and navigation contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Sites page readiness, wizard, selection, connection, central journey gate and navigation contracts validated successfully.' -ForegroundColor Green
