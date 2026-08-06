@@ -18,6 +18,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("F1", "Context help", "Enable contextual help for the control under the pointer."),
         new("Ctrl + F1", "Guided workflow tour", "Resume or restart the interactive tour from site setup through verified execution."),
         new("Shift + F1", "Open user guide", "Open the bundled Word document."),
+        new("Ctrl + Click version", "Create support bundle", "Create a ZIP with build identity, logs, diagnostics, and recent execution receipts."),
         new("Ctrl + 1", "Dashboard", "Open the live dashboard."),
         new("Ctrl + 2", "Sites", "Open website management."),
         new("Ctrl + 3", "WordPress Explorer", "Open synchronized WordPress data."),
@@ -35,10 +36,14 @@ public sealed partial class HelpViewModel : ObservableObject
 
     [ObservableProperty] private string _guideVersion = "Part 81";
     [ObservableProperty] private string _guideStatus = "The bundled guide and interactive tour are ready.";
+    [ObservableProperty] private string _latestSupportBundlePath = FindLatestSupportBundlePath() ?? "No support bundle has been created yet.";
 
     public IAsyncRelayCommand OpenGuideCommand { get; }
     public IAsyncRelayCommand OpenStatusRoadmapCommand { get; }
     public IAsyncRelayCommand OpenDocumentationFolderCommand { get; }
+    public IAsyncRelayCommand CreateSupportBundleCommand { get; }
+    public IAsyncRelayCommand OpenSupportFolderCommand { get; }
+    public IAsyncRelayCommand OpenLatestSupportBundleCommand { get; }
     public IRelayCommand ResumeGuidedTourCommand { get; }
     public IRelayCommand RestartGuidedTourCommand { get; }
 
@@ -48,12 +53,20 @@ public sealed partial class HelpViewModel : ObservableObject
         OpenGuideCommand = new AsyncRelayCommand(OpenGuideAsync);
         OpenStatusRoadmapCommand = new AsyncRelayCommand(OpenStatusRoadmapAsync);
         OpenDocumentationFolderCommand = new AsyncRelayCommand(OpenDocumentationFolderAsync);
+        CreateSupportBundleCommand = new AsyncRelayCommand(CreateSupportBundleAsync);
+        OpenSupportFolderCommand = new AsyncRelayCommand(OpenSupportFolderAsync);
+        OpenLatestSupportBundleCommand = new AsyncRelayCommand(OpenLatestSupportBundleAsync);
         ResumeGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: false));
         RestartGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: true));
     }
 
     public string GuidePath => Path.Combine(AppContext.BaseDirectory, "Documentation", GuideFileName);
     public string StatusRoadmapPath => Path.Combine(AppContext.BaseDirectory, "Documentation", StatusRoadmapFileName);
+
+    private static string SupportFolderPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AIWordPressManager",
+        "SupportBundles");
 
     private void ShowGuidedTour(bool restart)
     {
@@ -67,6 +80,71 @@ public sealed partial class HelpViewModel : ObservableObject
         GuideStatus = restart
             ? "The guided tour was restarted from the first step."
             : "The guided tour was opened at the saved step.";
+    }
+
+    private async Task CreateSupportBundleAsync()
+    {
+        try
+        {
+            BuildIdentitySupportSnapshot.WriteOnce();
+            var bundlePath = SupportBundleService.CreateBundle();
+            LatestSupportBundlePath = bundlePath;
+            GuideStatus = $"Support bundle created: {Path.GetFileName(bundlePath)}";
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{bundlePath}\"") { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            GuideStatus = exception.Message;
+            await _dialogService.ShowErrorAsync("Cannot create support bundle", exception.Message);
+        }
+    }
+
+    private async Task OpenSupportFolderAsync()
+    {
+        try
+        {
+            Directory.CreateDirectory(SupportFolderPath);
+            Process.Start(new ProcessStartInfo("explorer.exe", SupportFolderPath) { UseShellExecute = true });
+            GuideStatus = "Opened the support bundles folder.";
+        }
+        catch (Exception exception)
+        {
+            GuideStatus = exception.Message;
+            await _dialogService.ShowErrorAsync("Cannot open support folder", exception.Message);
+        }
+    }
+
+    private async Task OpenLatestSupportBundleAsync()
+    {
+        var latest = FindLatestSupportBundlePath();
+        if (string.IsNullOrWhiteSpace(latest) || !File.Exists(latest))
+        {
+            GuideStatus = "No support bundle has been created yet.";
+            await _dialogService.ShowErrorAsync("Support bundle not found", GuideStatus);
+            return;
+        }
+
+        try
+        {
+            LatestSupportBundlePath = latest;
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{latest}\"") { UseShellExecute = true });
+            GuideStatus = $"Selected {Path.GetFileName(latest)}.";
+        }
+        catch (Exception exception)
+        {
+            GuideStatus = exception.Message;
+            await _dialogService.ShowErrorAsync("Cannot open support bundle", exception.Message);
+        }
+    }
+
+    private static string? FindLatestSupportBundlePath()
+    {
+        if (!Directory.Exists(SupportFolderPath))
+            return null;
+
+        return Directory.EnumerateFiles(SupportFolderPath, "AIWordPressManager_Support_*.zip")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
     }
 
     private async Task OpenGuideAsync()
