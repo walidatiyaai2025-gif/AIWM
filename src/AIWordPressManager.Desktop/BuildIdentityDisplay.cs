@@ -37,53 +37,105 @@ internal static class BuildIdentityDisplay
         footer.Text = DisplayText;
         footer.FontWeight = FontWeights.SemiBold;
         footer.Cursor = Cursors.Hand;
-        footer.ToolTip = BuildToolTip(
-            "Click to copy complete build information.\nCtrl+Click to create a diagnostic support ZIP.");
+        footer.ToolTip =
+            $"Application version: {Version}\n" +
+            $"Source branch: {Branch}\n" +
+            $"Source commit: {Commit}\n" +
+            $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}\n\n" +
+            "Click to copy build information. Ctrl+Click creates a support ZIP. Right-click for support actions.";
 
         if (!BoundFooters.TryGetValue(footer, out _))
         {
-            footer.MouseLeftButtonUp += HandleBuildIdentityClick;
+            footer.MouseLeftButtonUp += CopyBuildIdentityToClipboard;
+            footer.ContextMenu = CreateSupportContextMenu();
             BoundFooters.Add(footer, new object());
         }
     }
 
-    private static void HandleBuildIdentityClick(object sender, MouseButtonEventArgs args)
+    private static ContextMenu CreateSupportContextMenu()
+    {
+        var menu = new ContextMenu();
+
+        var copy = new MenuItem { Header = "Copy build information" };
+        copy.Click += (_, _) => TryCopyDiagnosticText();
+        menu.Items.Add(copy);
+
+        var createBundle = new MenuItem { Header = "Create support bundle ZIP" };
+        createBundle.Click += (_, _) => CreateAndRevealSupportBundle();
+        menu.Items.Add(createBundle);
+
+        var openFolder = new MenuItem { Header = "Open support bundles folder" };
+        openFolder.Click += (_, _) => OpenSupportBundlesFolder();
+        menu.Items.Add(openFolder);
+
+        var openSnapshot = new MenuItem { Header = "Open support snapshot" };
+        openSnapshot.Click += (_, _) => OpenSupportSnapshot();
+        menu.Items.Add(openSnapshot);
+
+        return menu;
+    }
+
+    private static void CopyBuildIdentityToClipboard(object sender, MouseButtonEventArgs args)
     {
         try
         {
-            BuildIdentitySupportSnapshot.WriteOnce();
-
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
             {
-                var bundlePath = SupportBundleService.CreateBundle();
-                Clipboard.SetText(bundlePath);
-                Process.Start(new ProcessStartInfo(Path.GetDirectoryName(bundlePath)!) { UseShellExecute = true });
-
-                if (sender is TextBlock bundleFooter)
-                    bundleFooter.ToolTip = BuildToolTip($"Support bundle created and path copied:\n{bundlePath}");
+                CreateAndRevealSupportBundle();
+                if (sender is TextBlock supportFooter)
+                    supportFooter.ToolTip = "Support bundle created and selected in File Explorer.";
             }
             else
             {
-                Clipboard.SetText(DiagnosticText);
+                TryCopyDiagnosticText();
                 if (sender is TextBlock footer)
-                    footer.ToolTip = BuildToolTip("Build information copied.");
+                {
+                    footer.ToolTip =
+                        $"Build information copied.\n\n" +
+                        $"Application version: {Version}\n" +
+                        $"Source branch: {Branch}\n" +
+                        $"Source commit: {Commit}\n" +
+                        $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}";
+                }
             }
 
             args.Handled = true;
         }
         catch
         {
-            // Clipboard, file, or shell access may be temporarily unavailable.
-            // Build identity actions must remain non-blocking.
+            // Support actions must remain non-blocking.
         }
     }
 
-    private static string BuildToolTip(string actionText) =>
-        $"Application version: {Version}\n" +
-        $"Source branch: {Branch}\n" +
-        $"Source commit: {Commit}\n" +
-        $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}\n\n" +
-        actionText;
+    private static void TryCopyDiagnosticText()
+    {
+        BuildIdentitySupportSnapshot.WriteOnce();
+        Clipboard.SetText(DiagnosticText);
+    }
+
+    private static void CreateAndRevealSupportBundle()
+    {
+        BuildIdentitySupportSnapshot.WriteOnce();
+        var bundlePath = SupportBundleService.CreateBundle();
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{bundlePath}\"") { UseShellExecute = true });
+    }
+
+    private static void OpenSupportBundlesFolder()
+    {
+        var folder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AIWordPressManager",
+            "SupportBundles");
+        Directory.CreateDirectory(folder);
+        Process.Start(new ProcessStartInfo("explorer.exe", folder) { UseShellExecute = true });
+    }
+
+    private static void OpenSupportSnapshot()
+    {
+        BuildIdentitySupportSnapshot.WriteOnce();
+        if (File.Exists(BuildIdentitySupportSnapshot.SnapshotPath))
+            Process.Start(new ProcessStartInfo(BuildIdentitySupportSnapshot.SnapshotPath) { UseShellExecute = true });
+    }
 
     private static TextBlock? FindFooterTextBlock(DependencyObject parent)
     {
