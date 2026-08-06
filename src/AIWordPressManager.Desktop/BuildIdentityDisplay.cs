@@ -21,10 +21,12 @@ internal static class BuildIdentityDisplay
         $"AI WordPress Manager{Environment.NewLine}" +
         $"Version: {Version}{Environment.NewLine}" +
         $"Branch: {Branch}{Environment.NewLine}" +
-        $"Commit: {FullCommit}";
+        $"Commit: {FullCommit}{Environment.NewLine}" +
+        $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}";
 
     public static void Apply(Window window)
     {
+        BuildIdentitySupportSnapshot.WriteOnce();
         window.Title = $"AI WordPress Management • {DisplayText}";
 
         var footer = FindFooterTextBlock(window);
@@ -37,7 +39,8 @@ internal static class BuildIdentityDisplay
         footer.ToolTip =
             $"Application version: {Version}\n" +
             $"Source branch: {Branch}\n" +
-            $"Source commit: {Commit}\n\n" +
+            $"Source commit: {Commit}\n" +
+            $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}\n\n" +
             "Click to copy complete build information.";
 
         if (!BoundFooters.TryGetValue(footer, out _))
@@ -51,6 +54,7 @@ internal static class BuildIdentityDisplay
     {
         try
         {
+            BuildIdentitySupportSnapshot.WriteOnce();
             Clipboard.SetText(DiagnosticText);
             if (sender is TextBlock footer)
             {
@@ -58,7 +62,8 @@ internal static class BuildIdentityDisplay
                     $"Build information copied.\n\n" +
                     $"Application version: {Version}\n" +
                     $"Source branch: {Branch}\n" +
-                    $"Source commit: {Commit}";
+                    $"Source commit: {Commit}\n" +
+                    $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}";
             }
 
             args.Handled = true;
