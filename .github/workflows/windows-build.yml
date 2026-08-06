@@ -7,6 +7,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: windows-desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -15,6 +19,12 @@ jobs:
     name: Build WPF solution
     runs-on: windows-latest
     timeout-minutes: 30
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      NUGET_XMLDOC_MODE: skip
 
     steps:
       - name: Checkout source
@@ -31,21 +41,25 @@ jobs:
             **/*.csproj
 
       - name: Show .NET information
+        shell: pwsh
         run: dotnet --info
 
       - name: Restore solution
-        run: dotnet restore .\AIWordPressManager.sln
+        shell: pwsh
+        run: dotnet restore .\AIWordPressManager.sln --disable-parallel
 
       - name: Build solution
-        run: dotnet build .\AIWordPressManager.sln --configuration Release --no-restore /p:ContinuousIntegrationBuild=true
+        shell: pwsh
+        run: dotnet build .\AIWordPressManager.sln --configuration Release --no-restore --maxcpucount:1 /p:ContinuousIntegrationBuild=true
 
       - name: Publish desktop application
-        run: dotnet publish .\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj --configuration Release --no-restore --output .\artifacts\AIWordPressManager-Desktop /p:ContinuousIntegrationBuild=true
+        shell: pwsh
+        run: dotnet publish .\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj --configuration Release --no-restore --maxcpucount:1 --output .\artifacts\AIWordPressManager-Desktop /p:ContinuousIntegrationBuild=true
 
       - name: Upload desktop build
         uses: actions/upload-artifact@v4
         with:
-          name: AIWordPressManager-Desktop-v1.3.9
+          name: AIWordPressManager-Desktop-v1.3.9-${{ github.run_number }}
           path: .\artifacts\AIWordPressManager-Desktop\
           if-no-files-found: error
           retention-days: 14
