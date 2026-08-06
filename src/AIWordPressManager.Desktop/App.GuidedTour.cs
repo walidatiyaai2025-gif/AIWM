@@ -21,6 +21,7 @@ public partial class App
             return;
 
         BuildIdentityDisplay.Apply(mainWindow);
+        BuildIdentityDiagnostics.LogOnce();
         BindSiteIsolation(viewModel);
         viewModel.BindExecutionReceiptStore();
 
