@@ -23,10 +23,14 @@ foreach ($token in @(
     'Sensitive values are automatically replaced',
     'BuildManifest',
     'FileShare.ReadWrite',
-    'BuildIdentityDisplay.FullCommit'
+    'BuildIdentityDisplay.FullCommit',
+    'MaximumRetainedBundles = 10',
+    'DeleteExpiredBundles(bundlePath)',
+    'Skip(MaximumRetainedBundles - 1)',
+    'Retention: latest {MaximumRetainedBundles} support bundles'
 )) {
     if (-not $bundle.Contains($token)) {
-        throw "Support bundle security contract is missing token: $token"
+        throw "Support bundle security or retention contract is missing token: $token"
     }
 }
 
@@ -34,4 +38,4 @@ if ($bundle.Contains('source.CopyTo(target)')) {
     throw 'Support bundle logs must not be copied as raw bytes without redaction.'
 }
 
-Write-Host 'Support bundle redaction and manifest contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Support bundle redaction, manifest, and retention contracts validated successfully.' -ForegroundColor Green
