@@ -6,7 +6,7 @@ title AI WordPress Manager - Update, Build and Run
 color 0A
 
 set "REPOSITORY_URL=https://github.com/walidatiyaai2025-gif/AIWM.git"
-set "TARGET_BRANCH=main"
+set "TARGET_BRANCH=feature/execution-receipts-and-audit-trail"
 set "LOG_FILE=%CD%\build-and-run.log"
 set "SOLUTION=%CD%\AIWordPressManager.sln"
 set "DESKTOP_PROJECT=%CD%\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj"
