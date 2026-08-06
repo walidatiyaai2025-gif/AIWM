@@ -12,6 +12,9 @@ internal static class BuildIdentityDisplay
 {
     private const string FooterMarker = "AI WordPress Website Manager • Offline-first";
     private static readonly ConditionalWeakTable<TextBlock, object> BoundFooters = new();
+    private static readonly ConditionalWeakTable<Window, object> BoundWindows = new();
+    private static readonly RoutedUICommand CreateSupportBundleShortcutCommand = new("Create support bundle", nameof(CreateSupportBundleShortcutCommand), typeof(BuildIdentityDisplay));
+    private static readonly RoutedUICommand CopyBuildIdentityShortcutCommand = new("Copy build information", nameof(CopyBuildIdentityShortcutCommand), typeof(BuildIdentityDisplay));
 
     public static string Version { get; } = ResolveVersion();
     public static string Branch { get; } = ResolveMetadata("SourceBranch", "unknown");
@@ -28,6 +31,7 @@ internal static class BuildIdentityDisplay
     public static void Apply(Window window)
     {
         BuildIdentitySupportSnapshot.WriteOnce();
+        BindGlobalSupportShortcuts(window);
         window.Title = $"AI WordPress Management • {DisplayText}";
 
         var footer = FindFooterTextBlock(window);
@@ -42,7 +46,8 @@ internal static class BuildIdentityDisplay
             $"Source branch: {Branch}\n" +
             $"Source commit: {Commit}\n" +
             $"Support snapshot: {BuildIdentitySupportSnapshot.SnapshotPath}\n\n" +
-            "Click to copy build information. Ctrl+Click creates a support ZIP. Right-click for support actions.";
+            "Click to copy build information. Ctrl+Click creates a support ZIP. Right-click for support actions.\n" +
+            "Shortcuts: Ctrl+Shift+I copies build information; Ctrl+Shift+B creates a support bundle.";
 
         if (!BoundFooters.TryGetValue(footer, out _))
         {
@@ -50,6 +55,32 @@ internal static class BuildIdentityDisplay
             footer.ContextMenu = CreateSupportContextMenu();
             BoundFooters.Add(footer, new object());
         }
+    }
+
+    private static void BindGlobalSupportShortcuts(Window window)
+    {
+        if (BoundWindows.TryGetValue(window, out _))
+            return;
+
+        window.CommandBindings.Add(new CommandBinding(
+            CreateSupportBundleShortcutCommand,
+            (_, _) => CreateAndRevealSupportBundle(),
+            (_, args) => args.CanExecute = true));
+        window.InputBindings.Add(new KeyBinding(
+            CreateSupportBundleShortcutCommand,
+            Key.B,
+            ModifierKeys.Control | ModifierKeys.Shift));
+
+        window.CommandBindings.Add(new CommandBinding(
+            CopyBuildIdentityShortcutCommand,
+            (_, _) => TryCopyDiagnosticText(),
+            (_, args) => args.CanExecute = true));
+        window.InputBindings.Add(new KeyBinding(
+            CopyBuildIdentityShortcutCommand,
+            Key.I,
+            ModifierKeys.Control | ModifierKeys.Shift));
+
+        BoundWindows.Add(window, new object());
     }
 
     private static ContextMenu CreateSupportContextMenu()
@@ -122,12 +153,8 @@ internal static class BuildIdentityDisplay
 
     private static void OpenSupportBundlesFolder()
     {
-        var folder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AIWordPressManager",
-            "SupportBundles");
-        Directory.CreateDirectory(folder);
-        Process.Start(new ProcessStartInfo("explorer.exe", folder) { UseShellExecute = true });
+        Directory.CreateDirectory(SupportBundleService.BundlesDirectory);
+        Process.Start(new ProcessStartInfo("explorer.exe", SupportBundleService.BundlesDirectory) { UseShellExecute = true });
     }
 
     private static void OpenSupportSnapshot()
