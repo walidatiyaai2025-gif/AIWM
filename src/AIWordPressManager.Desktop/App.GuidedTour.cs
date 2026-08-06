@@ -20,6 +20,7 @@ public partial class App
         if (mainWindow.DataContext is not MainWindowViewModel viewModel)
             return;
 
+        BuildIdentityDisplay.Apply(mainWindow);
         BindSiteIsolation(viewModel);
         viewModel.BindExecutionReceiptStore();
 
