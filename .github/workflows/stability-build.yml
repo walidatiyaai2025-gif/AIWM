@@ -57,6 +57,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-SupportBundleCompatibility.ps1
 
+      - name: Validate Help support diagnostics panel
+        shell: pwsh
+        run: .\Build\Validate-HelpSupportPanel.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
