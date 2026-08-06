@@ -49,6 +49,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-SeoAuditFirstJourney.ps1
 
+      - name: Validate Suggested Changes first journey
+        shell: pwsh
+        run: .\Build\Validate-SuggestedChangesFirstJourney.ps1
+
       - name: Validate unified current-site context
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
