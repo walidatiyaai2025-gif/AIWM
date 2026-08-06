@@ -27,6 +27,10 @@ foreach ($token in @(
     'AfterEvidencePath',
     'ApplicationVersion',
     'OpenLatestReceiptCommand',
+    'OpenReceiptsFolderCommand',
+    'latest-receipt.txt',
+    'FindLatestReceiptPath',
+    'ResolveLatestReceiptPath',
     'Completed with failures',
     'JsonSerializer.Serialize',
     'BuildReceiptHtml'
@@ -40,4 +44,4 @@ if (-not $buildRun.Contains('TARGET_BRANCH=feature/execution-receipts-and-audit-
     throw 'Build-And-Run.bat is not pointing to the active development branch.'
 }
 
-Write-Host 'Execution receipt and audit-trail contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Persistent execution receipt and audit-trail contracts validated successfully.' -ForegroundColor Green
