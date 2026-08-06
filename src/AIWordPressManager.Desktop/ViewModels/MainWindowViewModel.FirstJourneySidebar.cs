@@ -20,7 +20,12 @@ public sealed partial class MainWindowViewModel
         var completionByTarget = CompleteJourneySteps
             .GroupBy(step => step.Target, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.All(step => step.IsCompleted), StringComparer.OrdinalIgnoreCase);
-        var currentTarget = CompleteJourneySteps.FirstOrDefault(step => step.IsCurrent)?.Target ?? "Sites";
+
+        var currentTarget = !Sites.IsFirstJourneyReady
+            ? "Sites"
+            : !Explorer.IsFirstJourneyReady
+                ? "WordPress Explorer"
+                : CompleteJourneySteps.FirstOrDefault(step => step.IsCurrent)?.Target ?? "SEO Audit";
 
         var definitions = new[]
         {
@@ -38,9 +43,13 @@ public sealed partial class MainWindowViewModel
         foreach (var definition in definitions)
         {
             var isDashboard = definition.Target.Equals("Dashboard", StringComparison.OrdinalIgnoreCase);
-            var completed = isDashboard
-                ? CompleteJourneySteps.Count > 0
-                : completionByTarget.TryGetValue(definition.Target, out var targetCompleted) && targetCompleted;
+            var completed = definition.Target switch
+            {
+                "Dashboard" => CompleteJourneySteps.Count > 0,
+                "Sites" => Sites.IsFirstJourneyReady,
+                "WordPress Explorer" => Explorer.IsFirstJourneyReady,
+                _ => completionByTarget.TryGetValue(definition.Target, out var targetCompleted) && targetCompleted
+            };
             var current = isDashboard
                 ? CurrentPage.Equals("Dashboard", StringComparison.OrdinalIgnoreCase)
                 : definition.Target.Equals(currentTarget, StringComparison.OrdinalIgnoreCase);
