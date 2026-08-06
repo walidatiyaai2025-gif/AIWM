@@ -1,0 +1,60 @@
+name: PR Fast Validation
+
+on:
+  push:
+    branches:
+      - feature/execution-receipts-and-audit-trail
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-fast-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Contracts and compile validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      NUGET_XMLDOC_MODE: skip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/packages.lock.json
+            **/Directory.Packages.props
+
+      - name: Validate execution receipts and build identity
+        shell: pwsh
+        run: ./Build/Validate-ExecutionReceipts.ps1
+
+      - name: Validate support bundle security
+        shell: pwsh
+        run: ./Build/Validate-SupportBundleSecurity.ps1
+
+      - name: Validate site-bound execution workflow
+        shell: pwsh
+        run: ./Build/Validate-SiteOperationGuard.ps1
+
+      - name: Restore solution
+        shell: pwsh
+        run: dotnet restore ./AIWordPressManager.sln --disable-parallel -p:EnableWindowsTargeting=true
+
+      - name: Compile solution
+        shell: pwsh
+        run: dotnet build ./AIWordPressManager.sln -c Release --no-restore --nologo --maxcpucount:1 -p:EnableWindowsTargeting=true -p:ContinuousIntegrationBuild=true -p:SourceBranchName=${{ github.ref_name }} -p:SourceCommitSha=${{ github.sha }}
