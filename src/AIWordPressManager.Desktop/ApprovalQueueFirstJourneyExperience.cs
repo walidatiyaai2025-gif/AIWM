@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -15,11 +16,7 @@ internal static class ApprovalQueueFirstJourneyExperience
     [ModuleInitializer]
     internal static void Initialize()
     {
-        EventManager.RegisterClassHandler(
-            typeof(MainWindow),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler(OnWindowLoaded),
-            true);
+        EventManager.RegisterClassHandler(typeof(MainWindow), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnWindowLoaded), true);
     }
 
     private static void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -27,7 +24,6 @@ internal static class ApprovalQueueFirstJourneyExperience
         if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
         if (Attached.TryGetValue(window, out _)) return;
         if (window.DataContext is not MainWindowViewModel main) return;
-
         var state = new State(window, main);
         Attached.Add(window, state);
         state.Attach();
@@ -39,7 +35,6 @@ internal static class ApprovalQueueFirstJourneyExperience
             ?? FindButtonForCommand(window, main.SuggestedChanges.ApproveCommand);
         var host = FindStackPanelHost(anchor);
         if (host is null) return null;
-
         var existing = host.Children.OfType<Border>().FirstOrDefault(x => Equals(x.Tag, "ApprovalQueueFirstJourney"));
         if (existing is not null) return existing;
 
@@ -53,7 +48,6 @@ internal static class ApprovalQueueFirstJourneyExperience
             BorderBrush = ResolveBrush(window, "BorderBrush", Brushes.LightGray),
             Background = ResolveBrush(window, "SurfaceAltBrush", Brushes.WhiteSmoke)
         };
-
         var root = new StackPanel();
         root.Children.Add(new TextBlock
         {
@@ -62,7 +56,6 @@ internal static class ApprovalQueueFirstJourneyExperience
             FontWeight = FontWeights.Bold,
             Foreground = ResolveBrush(window, "PrimaryBrush", Brushes.DodgerBlue)
         });
-
         var status = new TextBlock { Margin = new Thickness(0, 6, 0, 10), TextWrapping = TextWrapping.Wrap };
         status.SetBinding(TextBlock.TextProperty, new Binding("SuggestedChanges.ApprovalJourneyStatus"));
         root.Children.Add(status);
@@ -73,9 +66,9 @@ internal static class ApprovalQueueFirstJourneyExperience
             StringFormat = "Pending: {0}   Approved: {1}   Rejected: {2}   Execution ready: {3}",
             Bindings =
             {
-                new Binding("SuggestedChanges.PendingCount"),
-                new Binding("SuggestedChanges.ApprovedCount"),
-                new Binding("SuggestedChanges.RejectedCount"),
+                new Binding("SuggestedChanges.ApprovalPendingCount"),
+                new Binding("SuggestedChanges.ApprovalApprovedCount"),
+                new Binding("SuggestedChanges.ApprovalRejectedCount"),
                 new Binding("SuggestedChanges.ExecutionReadyCount")
             }
         });
@@ -93,7 +86,6 @@ internal static class ApprovalQueueFirstJourneyExperience
         icon.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
         var text = new FrameworkElementFactory(typeof(TextBlock));
         text.SetBinding(TextBlock.TextProperty, new Binding("Title"));
-        text.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
         panel.AppendChild(icon);
         panel.AppendChild(text);
         template.VisualTree = panel;
@@ -107,7 +99,6 @@ internal static class ApprovalQueueFirstJourneyExperience
         continueButton.SetBinding(UIElement.IsEnabledProperty, new Binding("SuggestedChanges.IsApprovalJourneyReady"));
         actions.Children.Add(continueButton);
         root.Children.Add(actions);
-
         card.Child = root;
         host.Children.Insert(0, card);
         return card;
@@ -151,34 +142,43 @@ internal static class ApprovalQueueFirstJourneyExperience
     private sealed class State(MainWindow window, MainWindowViewModel main)
     {
         private Border? _card;
+        private bool _refreshPending;
 
         public void Attach()
         {
             main.PropertyChanged += OnChanged;
             main.SuggestedChanges.PropertyChanged += OnChanged;
-            main.SuggestedChanges.Items.CollectionChanged += (_, _) => Refresh();
+            main.SuggestedChanges.Items.CollectionChanged += OnCollectionChanged;
             window.Closed += OnClosed;
-            window.Dispatcher.BeginInvoke(new Action(Refresh));
+            QueueRefresh();
         }
 
-        private void OnChanged(object? sender, PropertyChangedEventArgs e) => Refresh();
+        private void OnChanged(object? sender, PropertyChangedEventArgs e) => QueueRefresh();
+        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueRefresh();
 
-        private void Refresh()
+        private void QueueRefresh()
         {
-            main.SuggestedChanges.RefreshApprovalJourneyReadiness();
-            _card ??= Install(window, main);
-            if (_card is not null)
+            if (_refreshPending || window.Dispatcher.HasShutdownStarted) return;
+            _refreshPending = true;
+            window.Dispatcher.BeginInvoke(new Action(async () =>
             {
-                var visible = main.CurrentPage.Equals("Approval Queue", StringComparison.OrdinalIgnoreCase);
-                _card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-                _card.IsHitTestVisible = visible;
-            }
+                _refreshPending = false;
+                await main.SuggestedChanges.RefreshApprovalJourneyReadinessAsync();
+                _card ??= Install(window, main);
+                if (_card is not null)
+                {
+                    var visible = main.CurrentPage.Equals("Approval Queue", StringComparison.OrdinalIgnoreCase);
+                    _card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                    _card.IsHitTestVisible = visible;
+                }
+            }));
         }
 
         private void OnClosed(object? sender, EventArgs e)
         {
             main.PropertyChanged -= OnChanged;
             main.SuggestedChanges.PropertyChanged -= OnChanged;
+            main.SuggestedChanges.Items.CollectionChanged -= OnCollectionChanged;
             window.Closed -= OnClosed;
         }
     }
