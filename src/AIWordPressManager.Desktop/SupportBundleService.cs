@@ -8,6 +8,7 @@ namespace AIWordPressManager.Desktop;
 internal static class SupportBundleService
 {
     private const int MaximumRetainedBundles = 10;
+    private const string HashMarker = " | SHA-256: ";
 
     private static readonly Regex SensitiveAssignmentPattern = new(
         @"(?im)(?<key>api[_ -]?key|access[_ -]?token|refresh[_ -]?token|bearer|authorization|password|passwd|pwd|client[_ -]?secret|application[_ -]?password)\s*[:=]\s*(?<value>[^\r\n,;]+)",
@@ -69,6 +70,78 @@ internal static class SupportBundleService
         return Directory.EnumerateFiles(BundlesDirectory, "AIWordPressManager_Support_*.zip")
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
+    }
+
+    public static SupportBundleVerificationResult VerifyBundle(string bundlePath)
+    {
+        if (string.IsNullOrWhiteSpace(bundlePath) || !File.Exists(bundlePath))
+            return new(false, 0, 0, ["Support bundle file was not found."]);
+
+        try
+        {
+            using var archive = ZipFile.OpenRead(bundlePath);
+            var manifestEntry = archive.GetEntry("manifest.txt");
+            if (manifestEntry is null)
+                return new(false, 0, 0, ["manifest.txt is missing."]);
+
+            string manifest;
+            using (var reader = new StreamReader(manifestEntry.Open(), Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+                manifest = reader.ReadToEnd();
+
+            var expectedHashes = ParseManifestHashes(manifest);
+            if (expectedHashes.Count == 0)
+                return new(false, 0, 0, ["No SHA-256 entries were found in manifest.txt."]);
+
+            var failures = new List<string>();
+            var verified = 0;
+            foreach (var pair in expectedHashes)
+            {
+                var entry = archive.GetEntry(pair.Key);
+                if (entry is null)
+                {
+                    failures.Add($"Missing entry: {pair.Key}");
+                    continue;
+                }
+
+                using var stream = entry.Open();
+                var actualHash = Convert.ToHexString(SHA256.HashData(stream));
+                if (!string.Equals(actualHash, pair.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    failures.Add($"Hash mismatch: {pair.Key}");
+                    continue;
+                }
+
+                verified++;
+            }
+
+            return new(failures.Count == 0, verified, expectedHashes.Count, failures);
+        }
+        catch (Exception exception)
+        {
+            return new(false, 0, 0, [$"Verification failed: {exception.Message}"]);
+        }
+    }
+
+    private static Dictionary<string, string> ParseManifestHashes(string manifest)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawLine in manifest.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Trim();
+            if (!line.StartsWith("- ", StringComparison.Ordinal))
+                continue;
+
+            var markerIndex = line.IndexOf(HashMarker, StringComparison.Ordinal);
+            if (markerIndex <= 2)
+                continue;
+
+            var entryName = line[2..markerIndex].Trim();
+            var hash = line[(markerIndex + HashMarker.Length)..].Trim();
+            if (entryName.Length > 0 && hash.Length == 64)
+                result[entryName] = hash;
+        }
+
+        return result;
     }
 
     private static void DeleteExpiredBundles(string currentBundlePath)
@@ -172,7 +245,7 @@ internal static class SupportBundleService
         foreach (var entry in includedEntries.OrderBy(entry => entry))
         {
             var hash = entryHashes.TryGetValue(entry, out var value) ? value : "unavailable";
-            lines.Add($"- {entry} | SHA-256: {hash}");
+            lines.Add($"- {entry}{HashMarker}{hash}");
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -196,3 +269,9 @@ internal static class SupportBundleService
             entryHashes[normalizedEntryName] = Convert.ToHexString(SHA256.HashData(bytes));
     }
 }
+
+internal sealed record SupportBundleVerificationResult(
+    bool IsValid,
+    int VerifiedEntries,
+    int ExpectedEntries,
+    IReadOnlyList<string> Errors);
