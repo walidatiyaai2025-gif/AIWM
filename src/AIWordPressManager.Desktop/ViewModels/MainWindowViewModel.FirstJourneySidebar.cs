@@ -27,7 +27,9 @@ public sealed partial class MainWindowViewModel
                 ? "WordPress Explorer"
                 : !SeoAudit.IsFirstJourneyReady
                     ? "SEO Audit"
-                    : CompleteJourneySteps.FirstOrDefault(step => step.IsCurrent)?.Target ?? "Suggested Changes";
+                    : !SuggestedChanges.IsFirstJourneyReady
+                        ? "Suggested Changes"
+                        : CompleteJourneySteps.FirstOrDefault(step => step.IsCurrent)?.Target ?? "Approval Queue";
 
         var definitions = new[]
         {
@@ -51,6 +53,7 @@ public sealed partial class MainWindowViewModel
                 "Sites" => Sites.IsFirstJourneyReady,
                 "WordPress Explorer" => Explorer.IsFirstJourneyReady,
                 "SEO Audit" => SeoAudit.IsFirstJourneyReady,
+                "Suggested Changes" => SuggestedChanges.IsFirstJourneyReady,
                 _ => completionByTarget.TryGetValue(definition.Target, out var targetCompleted) && targetCompleted
             };
             var current = isDashboard
