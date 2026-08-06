@@ -1,26 +1,33 @@
 using System.Windows;
+using AIWordPressManager.Desktop.Services.Sites;
 using AIWordPressManager.Desktop.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AIWordPressManager.Desktop;
 
 public partial class App
 {
     private bool _guidedTourLaunchChecked;
+    private bool _siteIsolationBound;
+    private ICurrentSiteContext? _boundSiteContext;
+    private EventHandler<CurrentSiteChangedEventArgs>? _siteChangedHandler;
 
     private void App_OnActivated(object? sender, EventArgs e)
     {
-        if (_guidedTourLaunchChecked)
+        if (MainWindow is not MainWindow mainWindow || !mainWindow.IsVisible)
             return;
 
-        if (MainWindow is not MainWindow mainWindow || !mainWindow.IsVisible)
+        if (mainWindow.DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        BindSiteIsolation(viewModel);
+
+        if (_guidedTourLaunchChecked)
             return;
 
         _guidedTourLaunchChecked = true;
         var state = GuidedTourStateStore.Load();
         if (state.Completed)
-            return;
-
-        if (mainWindow.DataContext is not MainWindowViewModel viewModel)
             return;
 
         _ = Dispatcher.BeginInvoke(
@@ -34,6 +41,46 @@ public partial class App
                 tour.Show();
                 tour.Activate();
             }));
+    }
+
+    private void BindSiteIsolation(MainWindowViewModel viewModel)
+    {
+        if (_siteIsolationBound || _host is null)
+            return;
+
+        var siteContext = _host.Services.GetService<ICurrentSiteContext>();
+        if (siteContext is null)
+            return;
+
+        _siteChangedHandler = (_, args) =>
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                viewModel.ExecutionCenter.HandleActiveSiteChanged(args);
+                viewModel.Backups.HandleActiveSiteChanged(args);
+                return;
+            }
+
+            _ = Dispatcher.InvokeAsync(() =>
+            {
+                viewModel.ExecutionCenter.HandleActiveSiteChanged(args);
+                viewModel.Backups.HandleActiveSiteChanged(args);
+            });
+        };
+
+        siteContext.CurrentSiteChanged += _siteChangedHandler;
+        _boundSiteContext = siteContext;
+        _siteIsolationBound = true;
+    }
+
+    private void UnbindSiteIsolation()
+    {
+        if (_boundSiteContext is not null && _siteChangedHandler is not null)
+            _boundSiteContext.CurrentSiteChanged -= _siteChangedHandler;
+
+        _boundSiteContext = null;
+        _siteChangedHandler = null;
+        _siteIsolationBound = false;
     }
 
     public static void ShowGuidedTour(bool restart = false)
