@@ -33,6 +33,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-DashboardJourneyState.ps1
 
+      - name: Validate first user journey sidebar
+        shell: pwsh
+        run: .\Build\Validate-FirstUserJourneySidebar.ps1
+
       - name: Validate unified current-site context
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
