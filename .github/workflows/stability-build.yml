@@ -41,6 +41,10 @@ jobs:
         shell: pwsh
         run: dotnet test .\AIWordPressManager.sln -c Debug --no-build --nologo --filter "FullyQualifiedName!~UI" --logger "trx;LogFileName=stability-tests.trx"
 
+      - name: Smoke-test Startup and Login window
+        shell: pwsh
+        run: .\Build\Smoke-Test-DesktopStartup.ps1 -Configuration Debug -ObservationSeconds 20
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
