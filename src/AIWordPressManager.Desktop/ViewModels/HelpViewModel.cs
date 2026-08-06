@@ -19,6 +19,8 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Ctrl + F1", "Guided workflow tour", "Resume or restart the interactive tour from site setup through verified execution."),
         new("Shift + F1", "Open user guide", "Open the bundled Word document."),
         new("Ctrl + Click version", "Create support bundle", "Create a ZIP with build identity, logs, diagnostics, and recent execution receipts."),
+        new("Ctrl + Shift + B", "Create support bundle", "Create and reveal a sanitized support ZIP from any application screen."),
+        new("Ctrl + Shift + I", "Copy build identity", "Copy the application version, source branch, commit, and support snapshot path."),
         new("Ctrl + 1", "Dashboard", "Open the live dashboard."),
         new("Ctrl + 2", "Sites", "Open website management."),
         new("Ctrl + 3", "WordPress Explorer", "Open synchronized WordPress data."),
