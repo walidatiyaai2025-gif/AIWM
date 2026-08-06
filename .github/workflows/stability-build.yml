@@ -45,6 +45,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-ExplorerFirstJourney.ps1
 
+      - name: Validate SEO Audit first journey
+        shell: pwsh
+        run: .\Build\Validate-SeoAuditFirstJourney.ps1
+
       - name: Validate unified current-site context
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
