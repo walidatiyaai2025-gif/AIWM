@@ -15,7 +15,9 @@ public sealed partial class HelpViewModel : ObservableObject
 
     public ObservableCollection<ShortcutItem> Shortcuts { get; } =
     [
-        new("F1", "Open user guide", "Open the bundled Word document."),
+        new("F1", "Context help", "Enable contextual help for the control under the pointer."),
+        new("Ctrl + F1", "Guided workflow tour", "Resume or restart the interactive tour from site setup through verified execution."),
+        new("Shift + F1", "Open user guide", "Open the bundled Word document."),
         new("Ctrl + 1", "Dashboard", "Open the live dashboard."),
         new("Ctrl + 2", "Sites", "Open website management."),
         new("Ctrl + 3", "WordPress Explorer", "Open synchronized WordPress data."),
@@ -31,12 +33,14 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Ctrl + Shift + P", "Command Palette", "Open screens and run memory cleanup commands.")
     ];
 
-    [ObservableProperty] private string _guideVersion = "Part 80";
-    [ObservableProperty] private string _guideStatus = "The bundled guide is ready.";
+    [ObservableProperty] private string _guideVersion = "Part 81";
+    [ObservableProperty] private string _guideStatus = "The bundled guide and interactive tour are ready.";
 
     public IAsyncRelayCommand OpenGuideCommand { get; }
     public IAsyncRelayCommand OpenStatusRoadmapCommand { get; }
     public IAsyncRelayCommand OpenDocumentationFolderCommand { get; }
+    public IRelayCommand ResumeGuidedTourCommand { get; }
+    public IRelayCommand RestartGuidedTourCommand { get; }
 
     public HelpViewModel(IDialogService dialogService)
     {
@@ -44,10 +48,26 @@ public sealed partial class HelpViewModel : ObservableObject
         OpenGuideCommand = new AsyncRelayCommand(OpenGuideAsync);
         OpenStatusRoadmapCommand = new AsyncRelayCommand(OpenStatusRoadmapAsync);
         OpenDocumentationFolderCommand = new AsyncRelayCommand(OpenDocumentationFolderAsync);
+        ResumeGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: false));
+        RestartGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: true));
     }
 
     public string GuidePath => Path.Combine(AppContext.BaseDirectory, "Documentation", GuideFileName);
     public string StatusRoadmapPath => Path.Combine(AppContext.BaseDirectory, "Documentation", StatusRoadmapFileName);
+
+    private void ShowGuidedTour(bool restart)
+    {
+        if (System.Windows.Application.Current is not App)
+        {
+            GuideStatus = "The guided tour is available after the desktop workspace has opened.";
+            return;
+        }
+
+        App.ShowGuidedTour(restart);
+        GuideStatus = restart
+            ? "The guided tour was restarted from the first step."
+            : "The guided tour was opened at the saved step.";
+    }
 
     private async Task OpenGuideAsync()
     {
