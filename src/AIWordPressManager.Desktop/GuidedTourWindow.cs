@@ -15,10 +15,12 @@ public sealed class GuidedTourWindow : Window
     private readonly TextBlock _title = new() { FontSize = 25, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _description = new() { FontSize = 14, TextWrapping = TextWrapping.Wrap, LineHeight = 22 };
     private readonly TextBlock _requirement = new() { FontSize = 13, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _checkStatus = new() { FontSize = 12, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     private readonly ProgressBar _progress;
     private readonly Button _previous = Button("Previous", 90);
     private readonly Button _next = Button("Next", 90);
     private readonly Button _open = Button("Open this step", 130);
+    private readonly Button _check = Button("Check step", 105);
     private int _index;
     private bool _completed;
 
@@ -30,7 +32,7 @@ public sealed class GuidedTourWindow : Window
         _progress = new ProgressBar { Height = 7, Minimum = 0, Maximum = _steps.Count };
 
         Title = "AI WordPress Management — Guided Tour";
-        Width = 520; Height = 430; MinWidth = 460; MinHeight = 390;
+        Width = 570; Height = 470; MinWidth = 500; MinHeight = 430;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.CanResizeWithGrip;
         ShowInTaskbar = false;
@@ -41,17 +43,22 @@ public sealed class GuidedTourWindow : Window
         _previous.Click += (_, _) => Move(-1);
         _next.Click += (_, _) => Move(1);
         _open.Click += (_, _) => OpenCurrentStep();
+        _check.Click += (_, _) => Render();
         skip.Click += (_, _) => Complete(true);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        foreach (var element in new FrameworkElement[] { skip, Gap(), _previous, Gap(), _open, Gap(), _next }) buttons.Children.Add(element);
+        foreach (var element in new FrameworkElement[] { skip, Gap(), _previous, Gap(), _open, Gap(), _check, Gap(), _next }) buttons.Children.Add(element);
+
+        var requirementPanel = new StackPanel();
+        requirementPanel.Children.Add(_requirement);
+        requirementPanel.Children.Add(_checkStatus);
 
         var requirementCard = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(24, 0, 120, 160)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(65, 0, 120, 160)),
             BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14), Margin = new Thickness(0, 18, 0, 18), Child = _requirement
+            Padding = new Thickness(14), Margin = new Thickness(0, 18, 0, 18), Child = requirementPanel
         };
 
         var panel = new Grid { Margin = new Thickness(26) };
@@ -81,11 +88,23 @@ public sealed class GuidedTourWindow : Window
         if (e.Key == Key.Right) { Move(1); e.Handled = true; }
         else if (e.Key == Key.Left) { Move(-1); e.Handled = true; }
         else if (e.Key == Key.Enter) { OpenCurrentStep(); e.Handled = true; }
+        else if (e.Key == Key.F5) { Render(); e.Handled = true; }
         else if (e.Key == Key.Escape) { Close(); e.Handled = true; }
     }
 
     private void Move(int delta)
     {
+        if (delta > 0)
+        {
+            var validation = ValidateStep(_steps[_index]);
+            if (!validation.IsComplete)
+            {
+                ShowValidation(validation);
+                System.Media.SystemSounds.Exclamation.Play();
+                return;
+            }
+        }
+
         if (_index == _steps.Count - 1 && delta > 0) { Complete(false); return; }
         _index = Math.Clamp(_index + delta, 0, _steps.Count - 1);
         GuidedTourStateStore.Save(new GuidedTourState(_index, false, false));
@@ -99,6 +118,7 @@ public sealed class GuidedTourWindow : Window
             _viewModel.NavigateCommand.Execute(destination);
         Owner?.Activate();
         Topmost = false; Topmost = true;
+        Render();
     }
 
     private void Complete(bool skipped)
@@ -111,35 +131,108 @@ public sealed class GuidedTourWindow : Window
     private void Render()
     {
         var step = _steps[_index];
+        var validation = ValidateStep(step);
         _counter.Text = $"STEP {_index + 1} OF {_steps.Count}";
         _title.Text = step.Title;
         _description.Text = step.Description;
         _requirement.Text = $"Do this now: {step.RequiredAction}";
+        ShowValidation(validation);
         _progress.Value = _index + 1;
         _previous.IsEnabled = _index > 0;
         _next.Content = _index == _steps.Count - 1 ? "Finish" : "Next";
+        _next.IsEnabled = validation.IsComplete;
+        _check.IsEnabled = step.Gate != TourGate.None;
+        _check.Content = validation.IsComplete ? "Completed" : "Check step";
         _open.IsEnabled = !string.IsNullOrWhiteSpace(step.Destination);
         _open.Content = _open.IsEnabled ? $"Open {step.Destination}" : "Current screen";
     }
 
+    private void ShowValidation(StepValidation validation)
+    {
+        _checkStatus.Text = validation.IsComplete
+            ? $"✓ Completed — {validation.Message}"
+            : $"Required — {validation.Message}";
+        _checkStatus.Foreground = validation.IsComplete ? Brushes.ForestGreen : Brushes.IndianRed;
+    }
+
+    private StepValidation ValidateStep(TourStep step)
+    {
+        return step.Gate switch
+        {
+            TourGate.None => new(true, "This step is informational."),
+            TourGate.SiteSelected => HasSelectedSite()
+                ? new(true, $"Site selected: {_viewModel.DashboardSelectedSite}")
+                : new(false, "Select a WordPress site before continuing."),
+            TourGate.Synchronized => HasSynchronization()
+                ? new(true, _viewModel.DashboardLastSiteSync)
+                : new(false, "Synchronize the selected site and reload its local snapshot."),
+            TourGate.AuditCompleted => IsCompleted(_viewModel.JourneyAnalyzeState) || _viewModel.DashboardOpenIssues > 0
+                ? new(true, $"Analysis state: {_viewModel.JourneyAnalyzeState}; findings: {_viewModel.DashboardOpenIssues}")
+                : new(false, "Run the baseline/content/SEO audit until findings are stored."),
+            TourGate.SuggestionsGenerated => IsCompleted(_viewModel.JourneyAiReviewState) || _viewModel.DashboardAiSuggestions > 0
+                ? new(true, $"AI review: {_viewModel.JourneyAiReviewState}; suggestions: {_viewModel.DashboardAiSuggestions}")
+                : new(false, "Generate at least one explainable AI suggestion."),
+            TourGate.ApprovalCompleted => IsCompleted(_viewModel.JourneyApprovalState)
+                ? new(true, $"Approval state: {_viewModel.JourneyApprovalState}")
+                : new(false, "Approve at least one safe proposal in Approval Queue."),
+            TourGate.ExecutionCompleted => IsCompleted(_viewModel.JourneyExecuteState)
+                ? new(true, $"Execution state: {_viewModel.JourneyExecuteState}")
+                : new(false, "Execute the approved plan and wait for the WordPress response."),
+            TourGate.VerificationCompleted => IsCompleted(_viewModel.JourneyVerifyState) || IsCompleted(_viewModel.JourneyDoneState)
+                ? new(true, $"Verification: {_viewModel.JourneyVerifyState}; journey: {_viewModel.JourneyDoneState}")
+                : new(false, "Verify the saved WordPress values before finishing the tour."),
+            _ => new(false, "The required workflow state is not available yet.")
+        };
+    }
+
+    private bool HasSelectedSite() =>
+        !string.IsNullOrWhiteSpace(_viewModel.DashboardSelectedSite) &&
+        !string.Equals(_viewModel.DashboardSelectedSite, "No site selected", StringComparison.OrdinalIgnoreCase);
+
+    private bool HasSynchronization() =>
+        HasSelectedSite() &&
+        !string.IsNullOrWhiteSpace(_viewModel.DashboardLastSiteSync) &&
+        !_viewModel.DashboardLastSiteSync.Contains("Never", StringComparison.OrdinalIgnoreCase) &&
+        !_viewModel.DashboardLastSiteSync.Contains("Waiting", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCompleted(string? state) =>
+        !string.IsNullOrWhiteSpace(state) &&
+        (state.Contains("COMPLETE", StringComparison.OrdinalIgnoreCase) ||
+         state.Contains("DONE", StringComparison.OrdinalIgnoreCase) ||
+         state.Contains("VERIFIED", StringComparison.OrdinalIgnoreCase) ||
+         state.Contains("SUCCESS", StringComparison.OrdinalIgnoreCase));
+
     private static IReadOnlyList<TourStep> CreateSteps() =>
     [
-        new("Welcome", "Follow the complete safe workflow from sign-in to a verified WordPress improvement plan. Progress is stored locally.", "Review the workflow and continue.", "Dashboard"),
-        new("Add your WordPress site", "Create a connection using the site URL, WordPress username, and Application Password.", "Open Sites and add or select a site.", "Sites"),
-        new("Test the connection", "Confirm REST API access and credentials before synchronization or execution.", "Run Test connection successfully.", "Sites"),
-        new("Synchronize local data", "Load posts, pages, categories, tags, and media into the local SQLite snapshot.", "Open Explorer and press Synchronize now.", "WordPress Explorer"),
-        new("Run Content Audit", "Measure content quality signals from the synchronized offline snapshot.", "Run Content Audit and inspect high-priority findings.", "Content Audit"),
-        new("Run SEO Audit", "Inspect titles, descriptions, headings, images, canonical and indexability signals.", "Run SEO Audit and review the score.", "SEO Audit"),
-        new("Check links", "Detect broken links and redirects, then generate internal-link opportunities.", "Run Broken Links, then open Internal Links.", "Broken Links"),
-        new("Generate the improvement plan", "Convert audit findings into explainable proposals with current value, proposed value, risk, and expected result.", "Generate proposals in Suggested Changes.", "Suggested Changes"),
-        new("Approve safe changes", "Approval changes workflow state only; unsupported or high-risk changes should be rejected or routed to a specialist.", "Approve low-risk proposals in Approval Queue.", "Approval Queue"),
-        new("Prepare backup and evidence", "Review recovery and evidence requirements before any write reaches WordPress.", "Review Backups and Evidence Center.", "Backups"),
-        new("Execute the plan", "Apply approved changes, record WordPress responses, and verify saved values.", "Execute selected approved items and wait for Verified.", "Execution Center"),
-        new("Review results and automate", "Inspect reports, failures, retry and rollback options before scheduling recurring work.", "Open Reports, then Scheduler when the manual plan succeeds.", "Reports"),
-        new("Tour complete", "Site → Sync → Audit → Recommend → Approve → Backup → Execute → Verify is now ready for daily use.", "Return to Dashboard and start working.", "Dashboard")
+        new("Welcome", "Follow the complete safe workflow from sign-in to a verified WordPress improvement plan. Progress is stored locally.", "Review the workflow and continue.", "Dashboard", TourGate.None),
+        new("Add your WordPress site", "Create a connection using the site URL, WordPress username, and Application Password.", "Open Sites and add or select a site.", "Sites", TourGate.SiteSelected),
+        new("Test the connection", "Confirm REST API access and credentials before synchronization or execution.", "Run Test connection successfully.", "Sites", TourGate.SiteSelected),
+        new("Synchronize local data", "Load posts, pages, categories, tags, and media into the local SQLite snapshot.", "Open Explorer and press Synchronize now.", "WordPress Explorer", TourGate.Synchronized),
+        new("Run Content Audit", "Measure content quality signals from the synchronized offline snapshot.", "Run Content Audit and inspect high-priority findings.", "Content Audit", TourGate.AuditCompleted),
+        new("Run SEO Audit", "Inspect titles, descriptions, headings, images, canonical and indexability signals.", "Run SEO Audit and review the score.", "SEO Audit", TourGate.AuditCompleted),
+        new("Check links", "Detect broken links and redirects, then generate internal-link opportunities.", "Run Broken Links, then open Internal Links.", "Broken Links", TourGate.AuditCompleted),
+        new("Generate the improvement plan", "Convert audit findings into explainable proposals with current value, proposed value, risk, and expected result.", "Generate proposals in Suggested Changes.", "Suggested Changes", TourGate.SuggestionsGenerated),
+        new("Approve safe changes", "Approval changes workflow state only; unsupported or high-risk changes should be rejected or routed to a specialist.", "Approve low-risk proposals in Approval Queue.", "Approval Queue", TourGate.ApprovalCompleted),
+        new("Prepare backup and evidence", "Review recovery and evidence requirements before any write reaches WordPress.", "Review Backups and Evidence Center.", "Backups", TourGate.None),
+        new("Execute the plan", "Apply approved changes, record WordPress responses, and verify saved values.", "Execute selected approved items and wait for Verified.", "Execution Center", TourGate.ExecutionCompleted),
+        new("Review results and automate", "Inspect reports, failures, retry and rollback options before scheduling recurring work.", "Open Reports, then Scheduler when the manual plan succeeds.", "Reports", TourGate.VerificationCompleted),
+        new("Tour complete", "Site → Sync → Audit → Recommend → Approve → Backup → Execute → Verify is now ready for daily use.", "Return to Dashboard and start working.", "Dashboard", TourGate.VerificationCompleted)
     ];
 
-    private sealed record TourStep(string Title, string Description, string RequiredAction, string Destination);
+    private sealed record TourStep(string Title, string Description, string RequiredAction, string Destination, TourGate Gate);
+    private sealed record StepValidation(bool IsComplete, string Message);
+
+    private enum TourGate
+    {
+        None,
+        SiteSelected,
+        Synchronized,
+        AuditCompleted,
+        SuggestionsGenerated,
+        ApprovalCompleted,
+        ExecutionCompleted,
+        VerificationCompleted
+    }
 }
 
 public sealed record GuidedTourState(int StepIndex, bool Completed, bool Skipped);
