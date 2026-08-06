@@ -61,6 +61,14 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-ExecutionCenterFirstJourney.ps1
 
+      - name: Validate Evidence Center first journey
+        shell: pwsh
+        run: .\Build\Validate-EvidenceCenterFirstJourney.ps1
+
+      - name: Validate completed first journey summary
+        shell: pwsh
+        run: .\Build\Validate-FirstJourneyCompletion.ps1
+
       - name: Validate unified current-site context
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
