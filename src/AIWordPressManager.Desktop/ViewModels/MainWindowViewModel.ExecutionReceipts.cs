@@ -34,8 +34,7 @@ public sealed partial class MainWindowViewModel
         LastOptimizationRunText = !string.IsNullOrWhiteSpace(receiptPath) && File.Exists(receiptPath)
             ? ExecutionCenter.LatestReceiptStatus
             : "No verified execution receipt is available yet";
-    }
 
-    partial void OnLastOptimizationReceiptPathChanged(string? value)
-        => OpenLastOptimizationReceiptCommand.NotifyCanExecuteChanged();
+        OpenLastOptimizationReceiptCommand.NotifyCanExecuteChanged();
+    }
 }
