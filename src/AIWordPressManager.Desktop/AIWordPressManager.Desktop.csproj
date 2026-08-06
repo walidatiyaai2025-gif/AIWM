@@ -58,7 +58,7 @@
     </None>
     <None Include="..\..\WordPressPlugins\**\*" Link="WordPressPlugins\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
   <Target Name="NormalizeQualifiedNamespaces" BeforeTargets="CoreCompile" Condition="'$(OS)' == 'Windows_NT'">
