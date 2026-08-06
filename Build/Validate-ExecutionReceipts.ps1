@@ -9,10 +9,11 @@ $receiptPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\Ex
 $dashboardPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\MainWindowViewModel.ExecutionReceipts.cs'
 $appPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\App.GuidedTour.cs'
 $identityPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDisplay.cs'
+$diagnosticsPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDiagnostics.cs'
 $projectPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj'
 $buildRunPath = Join-Path $repoRoot 'Build-And-Run.bat'
 
-foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $projectPath, $buildRunPath)) {
+foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diagnosticsPath, $projectPath, $buildRunPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Missing execution receipt or build identity contract file: $path"
     }
@@ -22,6 +23,7 @@ $receipt = Get-Content -LiteralPath $receiptPath -Raw
 $dashboard = Get-Content -LiteralPath $dashboardPath -Raw
 $app = Get-Content -LiteralPath $appPath -Raw
 $identity = Get-Content -LiteralPath $identityPath -Raw
+$diagnostics = Get-Content -LiteralPath $diagnosticsPath -Raw
 $project = Get-Content -LiteralPath $projectPath -Raw
 $buildRun = Get-Content -LiteralPath $buildRunPath -Raw
 
@@ -67,6 +69,7 @@ foreach ($token in @(
 
 foreach ($token in @(
     'BuildIdentityDisplay.Apply(mainWindow)',
+    'BuildIdentityDiagnostics.LogOnce()',
     'Version {Version} • Branch {Branch}',
     'DiagnosticText',
     'Clipboard.SetText(DiagnosticText)',
@@ -80,6 +83,18 @@ foreach ($token in @(
 )) {
     if (-not ($app + $identity).Contains($token)) {
         throw "Build identity display is missing contract token: $token"
+    }
+}
+
+foreach ($token in @(
+    'BuildIdentityDisplay.Version',
+    'BuildIdentityDisplay.Branch',
+    'BuildIdentityDisplay.Commit',
+    'Interlocked.Exchange',
+    'Application build identity'
+)) {
+    if (-not $diagnostics.Contains($token)) {
+        throw "Build identity diagnostics logging is missing contract token: $token"
     }
 }
 
@@ -119,4 +134,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts and copyable version/branch/commit identity contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, copyable build identity, and diagnostics logging contracts validated successfully.' -ForegroundColor Green
