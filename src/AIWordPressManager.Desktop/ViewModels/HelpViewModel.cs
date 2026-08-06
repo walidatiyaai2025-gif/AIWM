@@ -57,13 +57,13 @@ public sealed partial class HelpViewModel : ObservableObject
 
     private void ShowGuidedTour(bool restart)
     {
-        if (System.Windows.Application.Current is not App app)
+        if (System.Windows.Application.Current is not App)
         {
             GuideStatus = "The guided tour is available after the desktop workspace has opened.";
             return;
         }
 
-        app.ShowGuidedTour(restart);
+        App.ShowGuidedTour(restart);
         GuideStatus = restart
             ? "The guided tour was restarted from the first step."
             : "The guided tour was opened at the saved step.";
