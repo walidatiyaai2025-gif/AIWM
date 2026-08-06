@@ -66,7 +66,9 @@ public sealed partial class ExecutionCenterViewModel
                 BeforeEvidencePath: BeforeEvidencePath,
                 AfterEvidencePath: AfterEvidencePath,
                 CompletedAtUtc: completedAtUtc,
-                ApplicationVersion: typeof(ExecutionCenterViewModel).Assembly.GetName().Version?.ToString() ?? "unknown");
+                ApplicationVersion: BuildIdentityDisplay.Version,
+                SourceBranch: BuildIdentityDisplay.Branch,
+                SourceCommit: BuildIdentityDisplay.Commit);
 
             var receiptsDirectory = GetReceiptsDirectory();
             Directory.CreateDirectory(receiptsDirectory);
@@ -223,6 +225,8 @@ pre { white-space: pre-wrap; background: #f7f9fa; padding: 16px; border-radius: 
 <tr><th>Before evidence</th><td>{{Encode(PathOrNone(receipt.BeforeEvidencePath))}}</td></tr>
 <tr><th>After evidence</th><td>{{Encode(PathOrNone(receipt.AfterEvidencePath))}}</td></tr>
 <tr><th>Application version</th><td>{{Encode(receipt.ApplicationVersion)}}</td></tr>
+<tr><th>Source branch</th><td>{{Encode(receipt.SourceBranch)}}</td></tr>
+<tr><th>Source commit</th><td>{{Encode(receipt.SourceCommit)}}</td></tr>
 </table>
 <h2>Execution summary</h2>
 <pre>{{Encode(receipt.Summary)}}</pre>
@@ -247,4 +251,6 @@ public sealed record ExecutionReceiptDocument(
     string? BeforeEvidencePath,
     string? AfterEvidencePath,
     DateTime CompletedAtUtc,
-    string ApplicationVersion);
+    string ApplicationVersion,
+    string SourceBranch,
+    string SourceCommit);
