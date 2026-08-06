@@ -81,7 +81,9 @@ foreach ($token in @(
     'SupportBundleService.CreateBundle()',
     'FindLatestSupportBundlePath',
     'AIWordPressManager_Support_*.zip',
-    'Ctrl + Click version'
+    'Ctrl + Click version',
+    'Ctrl + Shift + B',
+    'Ctrl + Shift + I'
 )) {
     if (-not $help.Contains($token)) {
         throw "Help support workflow is missing contract token: $token"
@@ -103,6 +105,13 @@ foreach ($token in @(
     'Open support snapshot',
     'SupportBundleService.CreateBundle()',
     'ModifierKeys.Control',
+    'BindGlobalSupportShortcuts(window)',
+    'CreateSupportBundleShortcutCommand',
+    'CopyBuildIdentityShortcutCommand',
+    'Key.B',
+    'Key.I',
+    'ModifierKeys.Control | ModifierKeys.Shift',
+    'BoundWindows',
     'Cursors.Hand',
     'Right-click for support actions.',
     'AssemblyMetadataAttribute',
@@ -194,4 +203,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, build identity, diagnostics logging, support snapshot, ZIP bundle, and Help support actions validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, build identity, global support shortcuts, diagnostics logging, support snapshot, ZIP bundle, and Help support actions validated successfully.' -ForegroundColor Green
