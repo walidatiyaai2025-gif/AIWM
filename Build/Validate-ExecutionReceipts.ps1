@@ -77,10 +77,12 @@ foreach ($token in @(
     'CreateSupportBundleCommand',
     'OpenSupportFolderCommand',
     'OpenLatestSupportBundleCommand',
+    'VerifyLatestSupportBundleCommand',
+    'SupportBundleVerificationStatus',
     'LatestSupportBundlePath',
     'SupportBundleService.CreateBundle()',
+    'SupportBundleService.VerifyBundle',
     'FindLatestSupportBundlePath',
-    'AIWordPressManager_Support_*.zip',
     'Ctrl + Click version',
     'Ctrl + Shift + B',
     'Ctrl + Shift + I'
@@ -101,9 +103,12 @@ foreach ($token in @(
     'MouseLeftButtonUp += CopyBuildIdentityToClipboard',
     'CreateSupportContextMenu()',
     'Create support bundle ZIP',
+    'Verify latest support bundle',
+    'VerifyLatestSupportBundle',
     'Open support bundles folder',
     'Open support snapshot',
     'SupportBundleService.CreateBundle()',
+    'SupportBundleService.VerifyBundle',
     'ModifierKeys.Control',
     'BindGlobalSupportShortcuts(window)',
     'CreateSupportBundleShortcutCommand',
@@ -160,7 +165,9 @@ foreach ($token in @(
     'application-*.log',
     'ExecutionReceipt_*.*',
     'FileShare.ReadWrite',
-    'BuildIdentityDisplay.Commit'
+    'BuildIdentityDisplay.Commit',
+    'VerifyBundle(string bundlePath)',
+    'SupportBundleVerificationResult'
 )) {
     if (-not $bundle.Contains($token)) {
         throw "Diagnostic support bundle is missing contract token: $token"
@@ -168,10 +175,10 @@ foreach ($token in @(
 }
 
 foreach ($token in @(
-    '<Version>2.2.7</Version>',
-    '<AssemblyVersion>2.2.7.0</AssemblyVersion>',
-    '<FileVersion>2.2.7.0</FileVersion>',
-    '<InformationalVersion>2.2.7</InformationalVersion>',
+    '<Version>2.2.8</Version>',
+    '<AssemblyVersion>2.2.8.0</AssemblyVersion>',
+    '<FileVersion>2.2.8.0</FileVersion>',
+    '<InformationalVersion>2.2.8</InformationalVersion>',
     '<AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />',
     '<AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />',
     '<SourceBranchName Condition=',
@@ -203,4 +210,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, build identity, global support shortcuts, diagnostics logging, support snapshot, ZIP bundle, and Help support actions validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, version 2.2.8 build identity, global support shortcuts, support bundle verification, and diagnostics contracts validated successfully.' -ForegroundColor Green
