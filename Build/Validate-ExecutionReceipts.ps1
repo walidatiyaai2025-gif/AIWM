@@ -68,10 +68,14 @@ foreach ($token in @(
 foreach ($token in @(
     'BuildIdentityDisplay.Apply(mainWindow)',
     'Version {Version} • Branch {Branch}',
+    'DiagnosticText',
+    'Clipboard.SetText(DiagnosticText)',
+    'MouseLeftButtonUp += CopyBuildIdentityToClipboard',
+    'Cursors.Hand',
+    'Click to copy complete build information.',
     'AssemblyMetadataAttribute',
     'SourceBranch',
     'SourceCommit',
-    'Source commit: {Commit}',
     'AI WordPress Website Manager • Offline-first'
 )) {
     if (-not ($app + $identity).Contains($token)) {
@@ -80,6 +84,10 @@ foreach ($token in @(
 }
 
 foreach ($token in @(
+    '<Version>2.2.7</Version>',
+    '<AssemblyVersion>2.2.7.0</AssemblyVersion>',
+    '<FileVersion>2.2.7.0</FileVersion>',
+    '<InformationalVersion>2.2.7</InformationalVersion>',
     '<AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />',
     '<AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />',
     '<SourceBranchName Condition=',
@@ -89,7 +97,7 @@ foreach ($token in @(
     'GITHUB_SHA'
 )) {
     if (-not $project.Contains($token)) {
-        throw "Desktop project build metadata is missing contract token: $token"
+        throw "Desktop project build metadata or version is missing contract token: $token"
     }
 }
 
@@ -111,4 +119,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, dashboard integration, and version/branch/commit identity contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts and copyable version/branch/commit identity contracts validated successfully.' -ForegroundColor Green
