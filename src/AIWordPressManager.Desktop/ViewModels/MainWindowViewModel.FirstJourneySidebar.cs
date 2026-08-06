@@ -31,7 +31,9 @@ public sealed partial class MainWindowViewModel
                         ? "Suggested Changes"
                         : !SuggestedChanges.IsApprovalJourneyReady
                             ? "Approval Queue"
-                            : CompleteJourneySteps.FirstOrDefault(step => step.IsCurrent)?.Target ?? "Execution Center";
+                            : !ExecutionCenter.IsFirstJourneyReady
+                                ? "Execution Center"
+                                : "Evidence Center";
 
         var definitions = new[]
         {
@@ -57,6 +59,7 @@ public sealed partial class MainWindowViewModel
                 "SEO Audit" => SeoAudit.IsFirstJourneyReady,
                 "Suggested Changes" => SuggestedChanges.IsFirstJourneyReady,
                 "Approval Queue" => SuggestedChanges.IsApprovalJourneyReady,
+                "Execution Center" => ExecutionCenter.IsFirstJourneyReady,
                 _ => completionByTarget.TryGetValue(definition.Target, out var targetCompleted) && targetCompleted
             };
             var current = isDashboard
