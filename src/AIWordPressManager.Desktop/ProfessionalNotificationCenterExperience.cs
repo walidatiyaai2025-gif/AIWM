@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using WpfApplication = System.Windows.Application;
 
 namespace AIWordPressManager.Desktop;
 
@@ -25,8 +27,12 @@ internal static class ProfessionalNotificationCenterExperience
         if (sender is not MainWindow window || window.Content is not Grid root)
             return;
 
-        Application.Current.DispatcherUnhandledException -= OnDispatcherUnhandledException;
-        Application.Current.DispatcherUnhandledException += OnDispatcherUnhandledException;
+        var application = WpfApplication.Current;
+        if (application is not null)
+        {
+            application.DispatcherUnhandledException -= OnDispatcherUnhandledException;
+            application.DispatcherUnhandledException += OnDispatcherUnhandledException;
+        }
 
         if (Find<Button>(root, "ProfessionalNotificationButton") is not null)
             return;
@@ -82,7 +88,7 @@ internal sealed record NotificationItem(
     bool IsRead)
 {
     public string Summary => $"[{Severity.ToUpperInvariant()}] {Title}";
-    public string CreatedDisplay => CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    public string CreatedDisplay => CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 }
 
 internal static class NotificationHub
@@ -104,8 +110,9 @@ internal static class NotificationHub
             Save();
         }
 
-        if (Application.Current?.Dispatcher.CheckAccess() == true) Add();
-        else Application.Current?.Dispatcher.Invoke(Add);
+        var dispatcher = WpfApplication.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess()) Add();
+        else dispatcher.Invoke(Add);
     }
 
     internal static void Show(Window owner)
