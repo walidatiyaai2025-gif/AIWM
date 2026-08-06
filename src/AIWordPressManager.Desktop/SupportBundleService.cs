@@ -6,6 +6,8 @@ namespace AIWordPressManager.Desktop;
 
 internal static class SupportBundleService
 {
+    private const int MaximumRetainedBundles = 10;
+
     private static readonly Regex SensitiveAssignmentPattern = new(
         @"(?im)(?<key>api[_ -]?key|access[_ -]?token|refresh[_ -]?token|bearer|authorization|password|passwd|pwd|client[_ -]?secret|application[_ -]?password)\s*[:=]\s*(?<value>[^\r\n,;]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -37,21 +39,23 @@ internal static class SupportBundleService
             $"AIWordPressManager_Support_{DateTime.Now:yyyyMMdd_HHmmss}_{BuildIdentityDisplay.Commit}.zip");
 
         var includedEntries = new List<string>();
-        using var archive = ZipFile.Open(bundlePath, ZipArchiveMode.Create);
+        using (var archive = ZipFile.Open(bundlePath, ZipArchiveMode.Create))
+        {
+            AddTextEntry(archive, "build-identity.txt", BuildIdentityDisplay.DiagnosticText, includedEntries);
+            AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "support-snapshot.txt"), "support-snapshot.txt", includedEntries);
+            AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "startup-history.log"), "startup-history.log", includedEntries);
 
-        AddTextEntry(archive, "build-identity.txt", BuildIdentityDisplay.DiagnosticText, includedEntries);
-        AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "support-snapshot.txt"), "support-snapshot.txt", includedEntries);
-        AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "startup-history.log"), "startup-history.log", includedEntries);
+            foreach (var logPath in EnumerateLatestFiles(logsDirectory, "application-*.log", 3))
+                AddSanitizedFileIfExists(archive, logPath, Path.Combine("logs", Path.GetFileName(logPath)), includedEntries);
 
-        foreach (var logPath in EnumerateLatestFiles(logsDirectory, "application-*.log", 3))
-            AddSanitizedFileIfExists(archive, logPath, Path.Combine("logs", Path.GetFileName(logPath)), includedEntries);
+            foreach (var receiptPath in EnumerateLatestFiles(receiptsDirectory, "ExecutionReceipt_*.*", 4))
+                AddSanitizedFileIfExists(archive, receiptPath, Path.Combine("receipts", Path.GetFileName(receiptPath)), includedEntries);
 
-        foreach (var receiptPath in EnumerateLatestFiles(receiptsDirectory, "ExecutionReceipt_*.*", 4))
-            AddSanitizedFileIfExists(archive, receiptPath, Path.Combine("receipts", Path.GetFileName(receiptPath)), includedEntries);
+            var manifest = BuildManifest(includedEntries);
+            AddTextEntry(archive, "manifest.txt", manifest, includedEntries: null);
+        }
 
-        var manifest = BuildManifest(includedEntries);
-        AddTextEntry(archive, "manifest.txt", manifest, includedEntries: null);
-
+        DeleteExpiredBundles(bundlePath);
         return bundlePath;
     }
 
@@ -63,6 +67,35 @@ internal static class SupportBundleService
         return Directory.EnumerateFiles(BundlesDirectory, "AIWordPressManager_Support_*.zip")
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
+    }
+
+    private static void DeleteExpiredBundles(string currentBundlePath)
+    {
+        try
+        {
+            var expiredBundles = Directory
+                .EnumerateFiles(BundlesDirectory, "AIWordPressManager_Support_*.zip")
+                .Where(path => !string.Equals(path, currentBundlePath, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Skip(MaximumRetainedBundles - 1)
+                .ToArray();
+
+            foreach (var expiredBundle in expiredBundles)
+            {
+                try
+                {
+                    File.Delete(expiredBundle);
+                }
+                catch
+                {
+                    // Cleanup must never prevent creation of a new support bundle.
+                }
+            }
+        }
+        catch
+        {
+            // Retention cleanup is best-effort and must remain non-blocking.
+        }
     }
 
     private static IEnumerable<string> EnumerateLatestFiles(string directory, string pattern, int count)
@@ -124,6 +157,7 @@ internal static class SupportBundleService
             $"Version: {BuildIdentityDisplay.Version}",
             $"Branch: {BuildIdentityDisplay.Branch}",
             $"Commit: {BuildIdentityDisplay.FullCommit}",
+            $"Retention: latest {MaximumRetainedBundles} support bundles",
             "Sensitive values are automatically replaced with <REDACTED>.",
             string.Empty,
             "Included entries:"
