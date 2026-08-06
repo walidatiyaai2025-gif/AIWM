@@ -46,13 +46,13 @@ if not exist ".git" (
 
 if not exist "%SOLUTION%" (
     echo [ERROR] Solution file not found: %SOLUTION%
-    >>"%LOG_FILE%" echo [ERROR] Solution file not found: %SOLUTION%
+    >>"%LOG_FILE%" echo [ERROR] Solution file not found.
     goto :failed
 )
 
 if not exist "%DESKTOP_PROJECT%" (
     echo [ERROR] Desktop project not found: %DESKTOP_PROJECT%
-    >>"%LOG_FILE%" echo [ERROR] Desktop project not found: %DESKTOP_PROJECT%
+    >>"%LOG_FILE%" echo [ERROR] Desktop project not found.
     goto :failed
 )
 
@@ -92,6 +92,10 @@ echo [5/10] Updating local branch from origin/%TARGET_BRANCH%...
 git reset --hard "origin/%TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :git_failed
 
+for /f "delims=" %%A in ('git rev-parse HEAD') do set "SOURCE_COMMIT=%%A"
+if not defined SOURCE_COMMIT set "SOURCE_COMMIT=unknown"
+>>"%LOG_FILE%" echo Source commit: %SOURCE_COMMIT%
+
 echo [6/10] Stopping .NET build servers...
 dotnet build-server shutdown >>"%LOG_FILE%" 2>&1
 
@@ -104,13 +108,14 @@ dotnet restore "%SOLUTION%" --force --disable-parallel --nologo >>"%LOG_FILE%" 2
 if errorlevel 1 goto :restore_failed
 
 echo [9/10] Building the Debug solution...
-dotnet build "%SOLUTION%" -c Debug --no-restore --nologo --maxcpucount:1 /p:SourceBranchName="%TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
+dotnet build "%SOLUTION%" -c Debug --no-restore --nologo --maxcpucount:1 /p:SourceBranchName="%TARGET_BRANCH%" /p:SourceCommitSha="%SOURCE_COMMIT%" >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
 echo [10/10] Starting AI WordPress Manager Desktop...
 echo.
 >>"%LOG_FILE%" echo Build succeeded: %DATE% %TIME%
 >>"%LOG_FILE%" echo Embedded source branch: %TARGET_BRANCH%
+>>"%LOG_FILE%" echo Embedded source commit: %SOURCE_COMMIT%
 >>"%LOG_FILE%" echo Commit:
 git log -1 --oneline >>"%LOG_FILE%" 2>&1
 
@@ -152,6 +157,7 @@ echo.
 echo ============================================================
 echo   Completed successfully.
 echo   Branch: %TARGET_BRANCH%
+echo   Commit: %SOURCE_COMMIT%
 echo ============================================================
 if defined HAS_LOCAL_CHANGES (
     echo [INFO] Your previous local changes are saved in Git stash.
