@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -39,20 +40,21 @@ internal static class SupportBundleService
             $"AIWordPressManager_Support_{DateTime.Now:yyyyMMdd_HHmmss}_{BuildIdentityDisplay.Commit}.zip");
 
         var includedEntries = new List<string>();
+        var entryHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using (var archive = ZipFile.Open(bundlePath, ZipArchiveMode.Create))
         {
-            AddTextEntry(archive, "build-identity.txt", BuildIdentityDisplay.DiagnosticText, includedEntries);
-            AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "support-snapshot.txt"), "support-snapshot.txt", includedEntries);
-            AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "startup-history.log"), "startup-history.log", includedEntries);
+            AddTextEntry(archive, "build-identity.txt", BuildIdentityDisplay.DiagnosticText, includedEntries, entryHashes);
+            AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "support-snapshot.txt"), "support-snapshot.txt", includedEntries, entryHashes);
+            AddSanitizedFileIfExists(archive, Path.Combine(logsDirectory, "startup-history.log"), "startup-history.log", includedEntries, entryHashes);
 
             foreach (var logPath in EnumerateLatestFiles(logsDirectory, "application-*.log", 3))
-                AddSanitizedFileIfExists(archive, logPath, Path.Combine("logs", Path.GetFileName(logPath)), includedEntries);
+                AddSanitizedFileIfExists(archive, logPath, Path.Combine("logs", Path.GetFileName(logPath)), includedEntries, entryHashes);
 
             foreach (var receiptPath in EnumerateLatestFiles(receiptsDirectory, "ExecutionReceipt_*.*", 4))
-                AddSanitizedFileIfExists(archive, receiptPath, Path.Combine("receipts", Path.GetFileName(receiptPath)), includedEntries);
+                AddSanitizedFileIfExists(archive, receiptPath, Path.Combine("receipts", Path.GetFileName(receiptPath)), includedEntries, entryHashes);
 
-            var manifest = BuildManifest(includedEntries);
-            AddTextEntry(archive, "manifest.txt", manifest, includedEntries: null);
+            var manifest = BuildManifest(includedEntries, entryHashes);
+            AddTextEntry(archive, "manifest.txt", manifest, includedEntries: null, entryHashes: null);
         }
 
         DeleteExpiredBundles(bundlePath);
@@ -113,7 +115,8 @@ internal static class SupportBundleService
         ZipArchive archive,
         string sourcePath,
         string entryName,
-        ICollection<string> includedEntries)
+        ICollection<string> includedEntries,
+        IDictionary<string, string> entryHashes)
     {
         if (!File.Exists(sourcePath))
             return;
@@ -127,7 +130,7 @@ internal static class SupportBundleService
                 FileShare.ReadWrite | FileShare.Delete);
             using var reader = new StreamReader(source, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             var sanitized = Sanitize(reader.ReadToEnd());
-            AddTextEntry(archive, entryName, sanitized, includedEntries);
+            AddTextEntry(archive, entryName, sanitized, includedEntries, entryHashes);
         }
         catch
         {
@@ -148,7 +151,9 @@ internal static class SupportBundleService
         return sanitized;
     }
 
-    private static string BuildManifest(IEnumerable<string> includedEntries)
+    private static string BuildManifest(
+        IEnumerable<string> includedEntries,
+        IReadOnlyDictionary<string, string> entryHashes)
     {
         var lines = new List<string>
         {
@@ -159,11 +164,17 @@ internal static class SupportBundleService
             $"Commit: {BuildIdentityDisplay.FullCommit}",
             $"Retention: latest {MaximumRetainedBundles} support bundles",
             "Sensitive values are automatically replaced with <REDACTED>.",
+            "Integrity: SHA-256 is recorded for every included data entry.",
             string.Empty,
-            "Included entries:"
+            "Included entries and SHA-256:"
         };
 
-        lines.AddRange(includedEntries.OrderBy(entry => entry).Select(entry => $"- {entry}"));
+        foreach (var entry in includedEntries.OrderBy(entry => entry))
+        {
+            var hash = entryHashes.TryGetValue(entry, out var value) ? value : "unavailable";
+            lines.Add($"- {entry} | SHA-256: {hash}");
+        }
+
         return string.Join(Environment.NewLine, lines);
     }
 
@@ -171,12 +182,17 @@ internal static class SupportBundleService
         ZipArchive archive,
         string entryName,
         string content,
-        ICollection<string>? includedEntries)
+        ICollection<string>? includedEntries,
+        IDictionary<string, string>? entryHashes)
     {
         var normalizedEntryName = entryName.Replace('\\', '/');
+        var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(content);
         var entry = archive.CreateEntry(normalizedEntryName, CompressionLevel.Optimal);
-        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        writer.Write(content);
+        using (var target = entry.Open())
+            target.Write(bytes, 0, bytes.Length);
+
         includedEntries?.Add(normalizedEntryName);
+        if (entryHashes is not null)
+            entryHashes[normalizedEntryName] = Convert.ToHexString(SHA256.HashData(bytes));
     }
 }
