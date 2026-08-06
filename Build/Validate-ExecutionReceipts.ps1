@@ -66,6 +66,8 @@ foreach ($token in @(
     'Version {Version} • Branch {Branch}',
     'AssemblyMetadataAttribute',
     'SourceBranch',
+    'SourceCommit',
+    'Source commit: {Commit}',
     'AI WordPress Website Manager • Offline-first'
 )) {
     if (-not ($app + $identity).Contains($token)) {
@@ -75,12 +77,15 @@ foreach ($token in @(
 
 foreach ($token in @(
     '<AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />',
+    '<AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />',
     '<SourceBranchName Condition=',
+    '<SourceCommitSha Condition=',
     'GITHUB_HEAD_REF',
-    'GITHUB_REF_NAME'
+    'GITHUB_REF_NAME',
+    'GITHUB_SHA'
 )) {
     if (-not $project.Contains($token)) {
-        throw "Desktop project branch metadata is missing contract token: $token"
+        throw "Desktop project build metadata is missing contract token: $token"
     }
 }
 
@@ -92,8 +97,14 @@ if (-not $buildRun.Contains('TARGET_BRANCH=feature/execution-receipts-and-audit-
     throw 'Build-And-Run.bat is not pointing to the active development branch.'
 }
 
-if (-not $buildRun.Contains('/p:SourceBranchName="%TARGET_BRANCH%"')) {
-    throw 'Build-And-Run.bat does not embed the active branch in the desktop assembly.'
+foreach ($token in @(
+    'git rev-parse HEAD',
+    '/p:SourceBranchName="%TARGET_BRANCH%"',
+    '/p:SourceCommitSha="%SOURCE_COMMIT%"'
+)) {
+    if (-not $buildRun.Contains($token)) {
+        throw "Build-And-Run.bat does not embed the complete build identity token: $token"
+    }
 }
 
-Write-Host 'Execution receipts, dashboard integration, and version/branch identity contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, dashboard integration, and version/branch/commit identity contracts validated successfully.' -ForegroundColor Green
