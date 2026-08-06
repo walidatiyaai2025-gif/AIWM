@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
 
+      - name: Validate guided tour workflow
+        shell: pwsh
+        run: .\Build\Validate-GuidedTour.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
