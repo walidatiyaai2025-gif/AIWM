@@ -5,6 +5,8 @@ cd /d "%~dp0"
 title AI WordPress Manager - Update, Build and Run
 color 0A
 
+set "REPOSITORY_URL=https://github.com/walidatiyaai2025-gif/AIWM.git"
+set "TARGET_BRANCH=main"
 set "LOG_FILE=%CD%\build-and-run.log"
 set "SOLUTION=%CD%\AIWordPressManager.sln"
 set "DESKTOP_PROJECT=%CD%\src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj"
@@ -12,10 +14,13 @@ set "DESKTOP_PROJECT=%CD%\src\AIWordPressManager.Desktop\AIWordPressManager.Desk
 > "%LOG_FILE%" echo AI WordPress Manager Build and Run Log
 >>"%LOG_FILE%" echo Started: %DATE% %TIME%
 >>"%LOG_FILE%" echo Project: %CD%
+>>"%LOG_FILE%" echo Repository: %REPOSITORY_URL%
+>>"%LOG_FILE%" echo Target branch: %TARGET_BRANCH%
 >>"%LOG_FILE%" echo.
 
 echo ============================================================
 echo   AI WordPress Manager - Update, Clean, Build and Run
+echo   Branch: %TARGET_BRANCH%
 echo ============================================================
 echo.
 
@@ -33,6 +38,12 @@ if errorlevel 1 (
     goto :failed
 )
 
+if not exist ".git" (
+    echo [ERROR] This folder is not a Git repository: %CD%
+    >>"%LOG_FILE%" echo [ERROR] Missing .git folder.
+    goto :failed
+)
+
 if not exist "%SOLUTION%" (
     echo [ERROR] Solution file not found: %SOLUTION%
     >>"%LOG_FILE%" echo [ERROR] Solution file not found: %SOLUTION%
@@ -45,7 +56,7 @@ if not exist "%DESKTOP_PROJECT%" (
     goto :failed
 )
 
-echo [1/8] Stopping running AI WordPress Manager processes...
+echo [1/10] Stopping running AI WordPress Manager processes...
 call "%CD%\Kill-All-Processes.bat" /quiet >>"%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo [ERROR] Could not stop one or more application processes.
@@ -53,32 +64,54 @@ if errorlevel 1 (
     goto :failed
 )
 
-echo [2/8] Checking local Git state...
+echo [2/10] Checking local Git state...
 git status --short >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :git_failed
 
-echo [3/8] Pulling the latest main branch...
-git pull origin main >>"%LOG_FILE%" 2>&1
+for /f "delims=" %%A in ('git status --porcelain') do set "HAS_LOCAL_CHANGES=1"
+if defined HAS_LOCAL_CHANGES (
+    echo [INFO] Local changes detected. Saving them to Git stash...
+    >>"%LOG_FILE%" echo [INFO] Local changes detected. Creating stash backup.
+    git stash push --include-untracked -m "Build-And-Run backup before switching to %TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
+    if errorlevel 1 goto :git_failed
+    echo [INFO] Local changes were preserved in Git stash.
+)
+
+echo [3/10] Fetching latest repository data...
+git fetch origin --prune >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :git_failed
 
-echo [4/8] Stopping .NET build servers...
+echo [4/10] Switching to branch %TARGET_BRANCH%...
+git checkout "%TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    git checkout -B "%TARGET_BRANCH%" "origin/%TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
+    if errorlevel 1 goto :git_failed
+)
+
+echo [5/10] Updating local branch from origin/%TARGET_BRANCH%...
+git reset --hard "origin/%TARGET_BRANCH%" >>"%LOG_FILE%" 2>&1
+if errorlevel 1 goto :git_failed
+
+echo [6/10] Stopping .NET build servers...
 dotnet build-server shutdown >>"%LOG_FILE%" 2>&1
 
-echo [5/8] Removing bin and obj folders...
+echo [7/10] Removing bin and obj folders...
 call "%CD%\Clean-All.bat" /quiet >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :clean_failed
 
-echo [6/8] Restoring NuGet packages...
-dotnet restore "%SOLUTION%" --force >>"%LOG_FILE%" 2>&1
+echo [8/10] Restoring NuGet packages...
+dotnet restore "%SOLUTION%" --force --disable-parallel --nologo >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :restore_failed
 
-echo [7/8] Building the Debug solution...
-dotnet build "%SOLUTION%" -c Debug --no-restore >>"%LOG_FILE%" 2>&1
+echo [9/10] Building the Debug solution...
+dotnet build "%SOLUTION%" -c Debug --no-restore --nologo --maxcpucount:1 >>"%LOG_FILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
-echo [8/8] Starting AI WordPress Manager Desktop...
+echo [10/10] Starting AI WordPress Manager Desktop...
 echo.
 >>"%LOG_FILE%" echo Build succeeded: %DATE% %TIME%
+>>"%LOG_FILE%" echo Commit:
+git log -1 --oneline >>"%LOG_FILE%" 2>&1
 
 dotnet run --no-build --project "%DESKTOP_PROJECT%"
 set "RUN_EXIT=%ERRORLEVEL%"
@@ -93,7 +126,7 @@ if not "%RUN_EXIT%"=="0" (
 goto :success
 
 :git_failed
-echo [ERROR] Git update failed. Local changes or authentication may require attention.
+echo [ERROR] Git update failed. Review the log for details.
 >>"%LOG_FILE%" echo [ERROR] Git update failed.
 goto :failed
 
@@ -117,7 +150,12 @@ goto :failed
 echo.
 echo ============================================================
 echo   Completed successfully.
+echo   Branch: %TARGET_BRANCH%
 echo ============================================================
+if defined HAS_LOCAL_CHANGES (
+    echo [INFO] Your previous local changes are saved in Git stash.
+    echo [INFO] Run: git stash list
+)
 >>"%LOG_FILE%" echo Completed successfully: %DATE% %TIME%
 exit /b 0
 
