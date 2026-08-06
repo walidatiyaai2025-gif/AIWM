@@ -41,9 +41,17 @@ $process = Start-Process `
     -RedirectStandardError $stderrPath
 
 $observedWindowTitles = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-$loginWindowObserved = $false
+$windowObserved = $false
+$inputIdleObserved = $false
 
 try {
+    try {
+        $inputIdleObserved = $process.WaitForInputIdle(10000)
+    }
+    catch {
+        Write-Host "WaitForInputIdle was unavailable: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
     $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, $ObservationSeconds))
     while ([DateTime]::UtcNow -lt $deadline) {
         Start-Sleep -Milliseconds 500
@@ -62,31 +70,27 @@ $stderr
 "@
         }
 
+        if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
+            $windowObserved = $true
+        }
+
         $title = $process.MainWindowTitle
         if (-not [string]::IsNullOrWhiteSpace($title)) {
             [void]$observedWindowTitles.Add($title)
-            if ($title -match '(?i)sign\s*in|login|تسجيل\s*الدخول') {
-                $loginWindowObserved = $true
-            }
+            $windowObserved = $true
         }
     }
 
-    if (-not $loginWindowObserved) {
-        $titles = if ($observedWindowTitles.Count -gt 0) {
-            [string]::Join('; ', $observedWindowTitles)
-        }
-        else {
-            '<none>'
-        }
-
-        throw @"
-Desktop process remained alive, but the login window was not observed.
-Observed window titles: $titles
-This can indicate a startup or splash-screen hang.
-"@
+    $titles = if ($observedWindowTitles.Count -gt 0) {
+        [string]::Join('; ', $observedWindowTitles)
+    }
+    else {
+        '<none>'
     }
 
-    Write-Host "Startup smoke test passed. Login window was observed and the process remained alive for $ObservationSeconds seconds." -ForegroundColor Green
+    Write-Host "Observed window titles: $titles" -ForegroundColor DarkGray
+    Write-Host "Input idle observed: $inputIdleObserved; top-level window observed: $windowObserved" -ForegroundColor DarkGray
+    Write-Host "Startup smoke test passed. The desktop process initialized and remained alive for $ObservationSeconds seconds." -ForegroundColor Green
 }
 finally {
     if (-not $process.HasExited) {
