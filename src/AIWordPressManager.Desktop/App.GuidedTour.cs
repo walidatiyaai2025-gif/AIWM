@@ -21,6 +21,7 @@ public partial class App
             return;
 
         BindSiteIsolation(viewModel);
+        viewModel.BindExecutionReceiptStore();
 
         if (_guidedTourLaunchChecked)
             return;
