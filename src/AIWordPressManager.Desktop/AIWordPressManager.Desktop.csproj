@@ -12,9 +12,12 @@
     <SourceBranchName Condition="'$(SourceBranchName)' == '' and '$(GITHUB_HEAD_REF)' != ''">$(GITHUB_HEAD_REF)</SourceBranchName>
     <SourceBranchName Condition="'$(SourceBranchName)' == '' and '$(GITHUB_REF_NAME)' != ''">$(GITHUB_REF_NAME)</SourceBranchName>
     <SourceBranchName Condition="'$(SourceBranchName)' == ''">local</SourceBranchName>
+    <SourceCommitSha Condition="'$(SourceCommitSha)' == '' and '$(GITHUB_SHA)' != ''">$(GITHUB_SHA)</SourceCommitSha>
+    <SourceCommitSha Condition="'$(SourceCommitSha)' == ''">unknown</SourceCommitSha>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />
+    <AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\Brand\*.png" />
