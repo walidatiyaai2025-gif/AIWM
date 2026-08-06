@@ -10,27 +10,62 @@ namespace AIWordPressManager.Desktop;
 internal static class HelpSupportPanelInjector
 {
     private const string HelpHeading = "Help & User Guide";
+    private const int MaximumInjectionAttempts = 6;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly ConditionalWeakTable<Window, object> InjectedWindows = new();
+    private static readonly ConditionalWeakTable<Window, object> PendingWindows = new();
 
     public static void EnsureInjected(Window window)
     {
-        if (InjectedWindows.TryGetValue(window, out _))
+        if (InjectedWindows.TryGetValue(window, out _) || PendingWindows.TryGetValue(window, out _))
             return;
 
-        _ = window.Dispatcher.BeginInvoke(
-            DispatcherPriority.Loaded,
-            new Action(() =>
+        PendingWindows.Add(window, new object());
+        _ = TryInjectAsync(window);
+    }
+
+    private static async Task TryInjectAsync(Window window)
+    {
+        try
+        {
+            for (var attempt = 1; attempt <= MaximumInjectionAttempts; attempt++)
             {
-                if (InjectedWindows.TryGetValue(window, out _))
+                if (!window.IsLoaded)
+                    await WaitForDispatcherAsync(window.Dispatcher);
+
+                var injected = await window.Dispatcher.InvokeAsync(
+                    () => TryInject(window),
+                    DispatcherPriority.Loaded);
+
+                if (injected)
                     return;
 
-                var rootPanel = FindHelpRootPanel(window);
-                if (rootPanel is null)
-                    return;
+                await Task.Delay(RetryDelay);
+            }
+        }
+        finally
+        {
+            PendingWindows.Remove(window);
+        }
+    }
 
-                rootPanel.Children.Insert(Math.Min(2, rootPanel.Children.Count), BuildSupportCard(window));
-                InjectedWindows.Add(window, new object());
-            }));
+    private static bool TryInject(Window window)
+    {
+        if (InjectedWindows.TryGetValue(window, out _))
+            return true;
+
+        var rootPanel = FindHelpRootPanel(window);
+        if (rootPanel is null)
+            return false;
+
+        rootPanel.Children.Insert(Math.Min(2, rootPanel.Children.Count), BuildSupportCard(window));
+        InjectedWindows.Add(window, new object());
+        return true;
+    }
+
+    private static Task WaitForDispatcherAsync(Dispatcher dispatcher)
+    {
+        return dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded).Task;
     }
 
     private static Border BuildSupportCard(Window window)
@@ -52,9 +87,8 @@ internal static class HelpSupportPanelInjector
         }
 
         var layout = new Grid();
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        for (var index = 0; index < 5; index++)
+            layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var heading = new TextBlock
         {
@@ -67,19 +101,48 @@ internal static class HelpSupportPanelInjector
         var description = new TextBlock
         {
             Text = "Create a sanitized support package, verify its SHA-256 integrity and build compatibility, or open the latest package.",
-            Margin = new Thickness(0, 8, 0, 14),
+            Margin = new Thickness(0, 8, 0, 10),
             TextWrapping = TextWrapping.Wrap,
             Foreground = window.TryFindResource("TextSecondaryBrush") as Brush
         };
         Grid.SetRow(description, 1);
         layout.Children.Add(description);
 
+        var status = new TextBlock
+        {
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        status.SetBinding(
+            TextBlock.TextProperty,
+            new Binding("Help.SupportBundleVerificationStatus") { Mode = BindingMode.OneWay });
+        Grid.SetRow(status, 2);
+        layout.Children.Add(status);
+
+        var latestPath = new TextBlock
+        {
+            Foreground = window.TryFindResource("TextSecondaryBrush") as Brush,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            ToolTip = "Latest support bundle path",
+            Margin = new Thickness(0, 0, 0, 14)
+        };
+        latestPath.SetBinding(
+            TextBlock.TextProperty,
+            new Binding("Help.LatestSupportBundlePath") { Mode = BindingMode.OneWay });
+        latestPath.SetBinding(
+            FrameworkElement.ToolTipProperty,
+            new Binding("Help.LatestSupportBundlePath") { Mode = BindingMode.OneWay });
+        Grid.SetRow(latestPath, 3);
+        layout.Children.Add(latestPath);
+
         var actions = new WrapPanel();
         actions.Children.Add(CreateButton(window, "Create support bundle", "Help.CreateSupportBundleCommand", primary: true));
         actions.Children.Add(CreateButton(window, "Verify latest bundle", "Help.VerifyLatestSupportBundleCommand"));
         actions.Children.Add(CreateButton(window, "Open latest bundle", "Help.OpenLatestSupportBundleCommand"));
         actions.Children.Add(CreateButton(window, "Open support folder", "Help.OpenSupportFolderCommand"));
-        Grid.SetRow(actions, 2);
+        Grid.SetRow(actions, 4);
         layout.Children.Add(actions);
 
         card.Child = layout;
