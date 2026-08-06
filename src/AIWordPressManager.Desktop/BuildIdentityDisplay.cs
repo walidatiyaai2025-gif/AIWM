@@ -32,6 +32,7 @@ internal static class BuildIdentityDisplay
     {
         BuildIdentitySupportSnapshot.WriteOnce();
         BindGlobalSupportShortcuts(window);
+        HelpSupportPanelInjector.EnsureInjected(window);
         window.Title = $"AI WordPress Management • {DisplayText}";
 
         var footer = FindFooterTextBlock(window);
