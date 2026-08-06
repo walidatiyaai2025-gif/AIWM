@@ -102,7 +102,7 @@ internal static class HelpSupportPanelInjector
 
         var description = new TextBlock
         {
-            Text = "Create a sanitized support package, verify its SHA-256 integrity and build compatibility, or open the latest package.",
+            Text = "Create a sanitized support package, verify its SHA-256 integrity and build compatibility, or copy a complete support summary.",
             Margin = new Thickness(0, 8, 0, 10),
             TextWrapping = TextWrapping.Wrap,
             Foreground = window.TryFindResource("TextSecondaryBrush") as Brush
@@ -141,6 +141,7 @@ internal static class HelpSupportPanelInjector
         var actions = new WrapPanel();
         actions.Children.Add(CreateButton(window, "Create support bundle", "Help.CreateSupportBundleCommand", primary: true));
         actions.Children.Add(CreateButton(window, "Verify latest bundle", "Help.VerifyLatestSupportBundleCommand"));
+        actions.Children.Add(CreateButton(window, "Copy support summary", "Help.CopySupportSummaryCommand"));
         actions.Children.Add(CreateButton(window, "Open latest bundle", "Help.OpenLatestSupportBundleCommand"));
         actions.Children.Add(CreateButton(window, "Open support folder", "Help.OpenSupportFolderCommand"));
         Grid.SetRow(actions, 4);
