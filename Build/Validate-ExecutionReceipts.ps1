@@ -175,10 +175,10 @@ foreach ($token in @(
 }
 
 foreach ($token in @(
-    '<Version>2.2.8</Version>',
-    '<AssemblyVersion>2.2.8.0</AssemblyVersion>',
-    '<FileVersion>2.2.8.0</FileVersion>',
-    '<InformationalVersion>2.2.8</InformationalVersion>',
+    '<Version>2.2.9</Version>',
+    '<AssemblyVersion>2.2.9.0</AssemblyVersion>',
+    '<FileVersion>2.2.9.0</FileVersion>',
+    '<InformationalVersion>2.2.9</InformationalVersion>',
     '<AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />',
     '<AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />',
     '<SourceBranchName Condition=',
@@ -210,4 +210,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, version 2.2.8 build identity, global support shortcuts, support bundle verification, and diagnostics contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, version 2.2.9 build identity, global support shortcuts, support bundle verification, and diagnostics contracts validated successfully.' -ForegroundColor Green
