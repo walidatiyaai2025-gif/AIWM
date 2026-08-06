@@ -17,23 +17,13 @@ public sealed partial class MainWindowViewModel
 
     internal void RefreshFirstJourneySidebar()
     {
-        var completionByTarget = CompleteJourneySteps
-            .GroupBy(step => step.Target, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.All(step => step.IsCompleted), StringComparer.OrdinalIgnoreCase);
-
-        var currentTarget = !Sites.IsFirstJourneyReady
-            ? "Sites"
-            : !Explorer.IsFirstJourneyReady
-                ? "WordPress Explorer"
-                : !SeoAudit.IsFirstJourneyReady
-                    ? "SEO Audit"
-                    : !SuggestedChanges.IsFirstJourneyReady
-                        ? "Suggested Changes"
-                        : !SuggestedChanges.IsApprovalJourneyReady
-                            ? "Approval Queue"
-                            : !ExecutionCenter.IsFirstJourneyReady
-                                ? "Execution Center"
-                                : "Evidence Center";
+        var currentTarget = !Sites.IsFirstJourneyReady ? "Sites"
+            : !Explorer.IsFirstJourneyReady ? "WordPress Explorer"
+            : !SeoAudit.IsFirstJourneyReady ? "SEO Audit"
+            : !SuggestedChanges.IsFirstJourneyReady ? "Suggested Changes"
+            : !SuggestedChanges.IsApprovalJourneyReady ? "Approval Queue"
+            : !ExecutionCenter.IsFirstJourneyReady ? "Execution Center"
+            : "Evidence Center";
 
         var definitions = new[]
         {
@@ -50,7 +40,6 @@ public sealed partial class MainWindowViewModel
         FirstJourneySidebarPages.Clear();
         foreach (var definition in definitions)
         {
-            var isDashboard = definition.Target.Equals("Dashboard", StringComparison.OrdinalIgnoreCase);
             var completed = definition.Target switch
             {
                 "Dashboard" => CompleteJourneySteps.Count > 0,
@@ -60,19 +49,14 @@ public sealed partial class MainWindowViewModel
                 "Suggested Changes" => SuggestedChanges.IsFirstJourneyReady,
                 "Approval Queue" => SuggestedChanges.IsApprovalJourneyReady,
                 "Execution Center" => ExecutionCenter.IsFirstJourneyReady,
-                _ => completionByTarget.TryGetValue(definition.Target, out var targetCompleted) && targetCompleted
+                "Evidence Center" => EvidenceCenter.IsFirstJourneyReady,
+                _ => false
             };
-            var current = isDashboard
+            var current = definition.Target.Equals("Dashboard", StringComparison.OrdinalIgnoreCase)
                 ? CurrentPage.Equals("Dashboard", StringComparison.OrdinalIgnoreCase)
                 : definition.Target.Equals(currentTarget, StringComparison.OrdinalIgnoreCase);
 
-            FirstJourneySidebarPages.Add(new FirstJourneyPage(
-                definition.Number,
-                definition.Target,
-                definition.Description,
-                completed,
-                current,
-                NavigateCommand));
+            FirstJourneySidebarPages.Add(new FirstJourneyPage(definition.Number, definition.Target, definition.Description, completed, current, NavigateCommand));
         }
 
         var completedPages = FirstJourneySidebarPages.Count(page => page.IsCompleted);
@@ -84,13 +68,7 @@ public sealed partial class MainWindowViewModel
     private sealed record FirstJourneyDefinition(string Number, string Target, string Description);
 }
 
-public sealed record FirstJourneyPage(
-    string Number,
-    string Target,
-    string Description,
-    bool IsCompleted,
-    bool IsCurrent,
-    ICommand NavigateCommand)
+public sealed record FirstJourneyPage(string Number, string Target, string Description, bool IsCompleted, bool IsCurrent, ICommand NavigateCommand)
 {
     public string DisplayTitle => $"{Number}. {Target}";
     public string StatusIcon => IsCompleted ? "✓" : IsCurrent ? "▶" : "○";
