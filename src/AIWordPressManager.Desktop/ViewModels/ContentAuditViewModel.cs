@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Data;
 using AIWordPressManager.Application.ContentAudit;
-using AIWordPressManager.Desktop.ViewModels.Sites;
+using AIWordPressManager.Desktop.Services.Sites;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -13,7 +13,7 @@ namespace AIWordPressManager.Desktop.ViewModels;
 public sealed partial class ContentAuditViewModel : ObservableObject
 {
     private readonly IContentAuditService _service;
-    private readonly SitesViewModel _sites;
+    private readonly ICurrentSiteContext _siteContext;
 
     public ObservableCollection<ContentAuditIssueDto> Issues { get; } = [];
     public ICollectionView IssuesView { get; }
@@ -46,23 +46,23 @@ public sealed partial class ContentAuditViewModel : ObservableObject
         : $"{SelectedIssue.Code} • {SelectedIssue.Severity} • {SelectedIssue.ContentType} #{SelectedIssue.WordPressId}\n\n{SelectedIssue.Description}";
     public string SelectedIssueLink => SelectedIssue?.Link ?? "No link selected";
 
-    public ContentAuditViewModel(IContentAuditService service, SitesViewModel sites)
+    public ContentAuditViewModel(IContentAuditService service, ICurrentSiteContext siteContext)
     {
         _service = service;
-        _sites = sites;
-
+        _siteContext = siteContext;
         IssuesView = CollectionViewSource.GetDefaultView(Issues);
         IssuesView.Filter = FilterIssue;
-
-        RunAuditCommand = new AsyncRelayCommand(RunAsync, () => !IsRunning && _sites.SelectedSite is not null);
+        RunAuditCommand = new AsyncRelayCommand(RunAsync, () => !IsRunning && _siteContext.HasSite);
         ClearFiltersCommand = new RelayCommand(ClearFilters);
         OpenSelectedCommand = new RelayCommand(OpenSelected, () => SelectedIssue is not null && Uri.TryCreate(SelectedIssue.Link, UriKind.Absolute, out _));
         CopyLinkCommand = new RelayCommand(CopySelectedLink, () => SelectedIssue is not null && !string.IsNullOrWhiteSpace(SelectedIssue.Link));
-
-        _sites.SelectedSiteChanged += (_, _) =>
+        _siteContext.CurrentSiteChanged += (_, args) =>
         {
+            ClearResults();
+            StatusMessage = args.Current.HasSite
+                ? $"{args.Current.SiteName} selected. Load or run its content audit."
+                : "Select a site, synchronize it, then run the measurable content audit.";
             RunAuditCommand.NotifyCanExecuteChanged();
-            SelectedIssue = null;
         };
     }
 
@@ -82,20 +82,16 @@ public sealed partial class ContentAuditViewModel : ObservableObject
 
     public async Task LoadAsync()
     {
-        var site = _sites.SelectedSite;
-        if (site is null)
+        var context = _siteContext.Capture();
+        if (context.SiteId is not Guid siteId)
         {
             StatusMessage = "Select a site to load its saved content audit.";
             return;
         }
 
-        var result = await _service.LoadLatestAsync(site.Id);
-        if (result.IsFailure)
-        {
-            StatusMessage = result.Error.Message;
-            return;
-        }
-
+        var result = await _service.LoadLatestAsync(siteId);
+        if (!_siteContext.IsCurrent(context)) return;
+        if (result.IsFailure) { StatusMessage = result.Error.Message; return; }
         Apply(result.Value, result.Value.CompletedAt == DateTimeOffset.MinValue
             ? "No saved content audit exists yet."
             : $"Loaded saved content audit from SQLite ({result.Value.CompletedAt.LocalDateTime:g}).");
@@ -103,26 +99,18 @@ public sealed partial class ContentAuditViewModel : ObservableObject
 
     private async Task RunAsync()
     {
-        var site = _sites.SelectedSite;
-        if (site is null) return;
-
+        var context = _siteContext.Capture();
+        if (context.SiteId is not Guid siteId) return;
         IsRunning = true;
-        StatusMessage = "Auditing synchronized posts and pages…";
+        StatusMessage = $"Auditing synchronized posts and pages for {context.SiteName}…";
         try
         {
-            var result = await _service.RunAsync(site.Id);
-            if (result.IsFailure)
-            {
-                StatusMessage = result.Error.Message;
-                return;
-            }
-
+            var result = await _service.RunAsync(siteId);
+            if (!_siteContext.IsCurrent(context)) return;
+            if (result.IsFailure) { StatusMessage = result.Error.Message; return; }
             Apply(result.Value, $"Audit completed with {result.Value.Issues.Count} measurable issues.");
         }
-        finally
-        {
-            IsRunning = false;
-        }
+        finally { IsRunning = false; }
     }
 
     private void Apply(ContentAuditSummary summary, string message)
@@ -132,36 +120,31 @@ public sealed partial class ContentAuditViewModel : ObservableObject
         HighIssues = summary.HighIssues;
         MediumIssues = summary.MediumIssues;
         LowIssues = summary.LowIssues;
-        LastCompleted = summary.CompletedAt == DateTimeOffset.MinValue
-            ? "Not run yet"
-            : summary.CompletedAt.LocalDateTime.ToString("g");
-
+        LastCompleted = summary.CompletedAt == DateTimeOffset.MinValue ? "Not run yet" : summary.CompletedAt.LocalDateTime.ToString("g");
         SelectedIssue = null;
         Issues.Clear();
-        foreach (var issue in summary.Issues)
-            Issues.Add(issue);
-
+        foreach (var issue in summary.Issues) Issues.Add(issue);
         IssuesView.Refresh();
         UpdateVisibleCount();
         StatusMessage = message;
     }
 
+    private void ClearResults()
+    {
+        SelectedIssue = null;
+        Score = AuditedItems = HighIssues = MediumIssues = LowIssues = VisibleIssues = 0;
+        LastCompleted = "Not run yet";
+        Issues.Clear();
+        ClearFilters();
+        IssuesView.Refresh();
+    }
+
     private bool FilterIssue(object item)
     {
-        if (item is not ContentAuditIssueDto issue)
-            return false;
-
-        if (!string.Equals(SelectedSeverity, "All", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(issue.Severity, SelectedSeverity, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (!string.Equals(SelectedType, "All", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(issue.ContentType, SelectedType, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (string.IsNullOrWhiteSpace(SearchText))
-            return true;
-
+        if (item is not ContentAuditIssueDto issue) return false;
+        if (!string.Equals(SelectedSeverity, "All", StringComparison.OrdinalIgnoreCase) && !string.Equals(issue.Severity, SelectedSeverity, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!string.Equals(SelectedType, "All", StringComparison.OrdinalIgnoreCase) && !string.Equals(issue.ContentType, SelectedType, StringComparison.OrdinalIgnoreCase)) return false;
+        if (string.IsNullOrWhiteSpace(SearchText)) return true;
         var term = SearchText.Trim();
         return issue.ContentTitle.Contains(term, StringComparison.OrdinalIgnoreCase)
                || issue.Description.Contains(term, StringComparison.OrdinalIgnoreCase)
@@ -171,34 +154,19 @@ public sealed partial class ContentAuditViewModel : ObservableObject
                || issue.WordPressId.ToString().Contains(term, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void RefreshFilters()
-    {
-        IssuesView.Refresh();
-        UpdateVisibleCount();
-    }
-
+    private void RefreshFilters() { IssuesView.Refresh(); UpdateVisibleCount(); }
     private void UpdateVisibleCount() => VisibleIssues = IssuesView.Cast<object>().Count();
-
-    private void ClearFilters()
-    {
-        SearchText = string.Empty;
-        SelectedSeverity = "All";
-        SelectedType = "All";
-    }
+    private void ClearFilters() { SearchText = string.Empty; SelectedSeverity = "All"; SelectedType = "All"; }
 
     private void OpenSelected()
     {
-        if (SelectedIssue is null || !Uri.TryCreate(SelectedIssue.Link, UriKind.Absolute, out var uri))
-            return;
-
+        if (SelectedIssue is null || !Uri.TryCreate(SelectedIssue.Link, UriKind.Absolute, out var uri)) return;
         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
     }
 
     private void CopySelectedLink()
     {
-        if (SelectedIssue is null || string.IsNullOrWhiteSpace(SelectedIssue.Link))
-            return;
-
+        if (SelectedIssue is null || string.IsNullOrWhiteSpace(SelectedIssue.Link)) return;
         Clipboard.SetText(SelectedIssue.Link);
         StatusMessage = "Selected content link copied to the clipboard.";
     }
