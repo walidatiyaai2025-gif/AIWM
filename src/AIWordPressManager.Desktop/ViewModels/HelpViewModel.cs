@@ -21,6 +21,7 @@ public sealed partial class HelpViewModel : ObservableObject
         new("Ctrl + Click version", "Create support bundle", "Create a ZIP with build identity, logs, diagnostics, and recent execution receipts."),
         new("Ctrl + Shift + B", "Create support bundle", "Create and reveal a sanitized support ZIP from any application screen."),
         new("Ctrl + Shift + I", "Copy build identity", "Copy the application version, source branch, commit, and support snapshot path."),
+        new("Help support action", "Verify latest bundle", "Recalculate every SHA-256 value recorded in manifest.txt and report modified or missing entries."),
         new("Ctrl + 1", "Dashboard", "Open the live dashboard."),
         new("Ctrl + 2", "Sites", "Open website management."),
         new("Ctrl + 3", "WordPress Explorer", "Open synchronized WordPress data."),
@@ -39,6 +40,7 @@ public sealed partial class HelpViewModel : ObservableObject
     [ObservableProperty] private string _guideVersion = "Part 81";
     [ObservableProperty] private string _guideStatus = "The bundled guide and interactive tour are ready.";
     [ObservableProperty] private string _latestSupportBundlePath = FindLatestSupportBundlePath() ?? "No support bundle has been created yet.";
+    [ObservableProperty] private string _supportBundleVerificationStatus = "Not verified yet.";
 
     public IAsyncRelayCommand OpenGuideCommand { get; }
     public IAsyncRelayCommand OpenStatusRoadmapCommand { get; }
@@ -46,6 +48,7 @@ public sealed partial class HelpViewModel : ObservableObject
     public IAsyncRelayCommand CreateSupportBundleCommand { get; }
     public IAsyncRelayCommand OpenSupportFolderCommand { get; }
     public IAsyncRelayCommand OpenLatestSupportBundleCommand { get; }
+    public IAsyncRelayCommand VerifyLatestSupportBundleCommand { get; }
     public IRelayCommand ResumeGuidedTourCommand { get; }
     public IRelayCommand RestartGuidedTourCommand { get; }
 
@@ -58,6 +61,7 @@ public sealed partial class HelpViewModel : ObservableObject
         CreateSupportBundleCommand = new AsyncRelayCommand(CreateSupportBundleAsync);
         OpenSupportFolderCommand = new AsyncRelayCommand(OpenSupportFolderAsync);
         OpenLatestSupportBundleCommand = new AsyncRelayCommand(OpenLatestSupportBundleAsync);
+        VerifyLatestSupportBundleCommand = new AsyncRelayCommand(VerifyLatestSupportBundleAsync);
         ResumeGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: false));
         RestartGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: true));
     }
@@ -65,10 +69,7 @@ public sealed partial class HelpViewModel : ObservableObject
     public string GuidePath => Path.Combine(AppContext.BaseDirectory, "Documentation", GuideFileName);
     public string StatusRoadmapPath => Path.Combine(AppContext.BaseDirectory, "Documentation", StatusRoadmapFileName);
 
-    private static string SupportFolderPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "AIWordPressManager",
-        "SupportBundles");
+    private static string SupportFolderPath => SupportBundleService.BundlesDirectory;
 
     private void ShowGuidedTour(bool restart)
     {
@@ -91,7 +92,9 @@ public sealed partial class HelpViewModel : ObservableObject
             BuildIdentitySupportSnapshot.WriteOnce();
             var bundlePath = SupportBundleService.CreateBundle();
             LatestSupportBundlePath = bundlePath;
-            GuideStatus = $"Support bundle created: {Path.GetFileName(bundlePath)}";
+            var verification = SupportBundleService.VerifyBundle(bundlePath);
+            SupportBundleVerificationStatus = FormatVerificationStatus(verification);
+            GuideStatus = $"Support bundle created and verified: {Path.GetFileName(bundlePath)}";
             Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{bundlePath}\"") { UseShellExecute = true });
         }
         catch (Exception exception)
@@ -99,6 +102,38 @@ public sealed partial class HelpViewModel : ObservableObject
             GuideStatus = exception.Message;
             await _dialogService.ShowErrorAsync("Cannot create support bundle", exception.Message);
         }
+    }
+
+    private async Task VerifyLatestSupportBundleAsync()
+    {
+        var latest = FindLatestSupportBundlePath();
+        if (string.IsNullOrWhiteSpace(latest) || !File.Exists(latest))
+        {
+            SupportBundleVerificationStatus = "No support bundle has been created yet.";
+            GuideStatus = SupportBundleVerificationStatus;
+            await _dialogService.ShowErrorAsync("Support bundle not found", GuideStatus);
+            return;
+        }
+
+        var verification = SupportBundleService.VerifyBundle(latest);
+        LatestSupportBundlePath = latest;
+        SupportBundleVerificationStatus = FormatVerificationStatus(verification);
+        GuideStatus = SupportBundleVerificationStatus;
+
+        if (!verification.IsValid)
+        {
+            var details = verification.Errors.Count == 0
+                ? SupportBundleVerificationStatus
+                : SupportBundleVerificationStatus + Environment.NewLine + string.Join(Environment.NewLine, verification.Errors);
+            await _dialogService.ShowErrorAsync("Support bundle integrity failed", details);
+        }
+    }
+
+    private static string FormatVerificationStatus(SupportBundleVerificationResult verification)
+    {
+        return verification.IsValid
+            ? $"Integrity verified: {verification.VerifiedEntries}/{verification.ExpectedEntries} entries match manifest SHA-256 values."
+            : $"Integrity failed: {verification.VerifiedEntries}/{verification.ExpectedEntries} entries verified; {verification.Errors.Count} error(s).";
     }
 
     private async Task OpenSupportFolderAsync()
@@ -139,15 +174,7 @@ public sealed partial class HelpViewModel : ObservableObject
         }
     }
 
-    private static string? FindLatestSupportBundlePath()
-    {
-        if (!Directory.Exists(SupportFolderPath))
-            return null;
-
-        return Directory.EnumerateFiles(SupportFolderPath, "AIWordPressManager_Support_*.zip")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
-    }
+    private static string? FindLatestSupportBundlePath() => SupportBundleService.FindLatestBundle();
 
     private async Task OpenGuideAsync()
     {
