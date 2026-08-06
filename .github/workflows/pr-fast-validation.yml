@@ -47,6 +47,14 @@ jobs:
         shell: pwsh
         run: ./Build/Validate-SupportBundleSecurity.ps1
 
+      - name: Validate support bundle compatibility
+        shell: pwsh
+        run: ./Build/Validate-SupportBundleCompatibility.ps1
+
+      - name: Validate Help support diagnostics panel
+        shell: pwsh
+        run: ./Build/Validate-HelpSupportPanel.ps1
+
       - name: Validate site-bound execution workflow
         shell: pwsh
         run: ./Build/Validate-SiteOperationGuard.ps1
