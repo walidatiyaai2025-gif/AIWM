@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $receiptPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\ExecutionCenterViewModel.Receipts.cs'
 $dashboardPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\MainWindowViewModel.ExecutionReceipts.cs'
+$helpPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\HelpViewModel.cs'
 $appPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\App.GuidedTour.cs'
 $identityPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDisplay.cs'
 $diagnosticsPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDiagnostics.cs'
@@ -15,7 +16,7 @@ $bundlePath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\SupportBundleS
 $projectPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj'
 $buildRunPath = Join-Path $repoRoot 'Build-And-Run.bat'
 
-foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diagnosticsPath, $snapshotPath, $bundlePath, $projectPath, $buildRunPath)) {
+foreach ($path in @($receiptPath, $dashboardPath, $helpPath, $appPath, $identityPath, $diagnosticsPath, $snapshotPath, $bundlePath, $projectPath, $buildRunPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Missing execution receipt or build identity contract file: $path"
     }
@@ -23,6 +24,7 @@ foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diag
 
 $receipt = Get-Content -LiteralPath $receiptPath -Raw
 $dashboard = Get-Content -LiteralPath $dashboardPath -Raw
+$help = Get-Content -LiteralPath $helpPath -Raw
 $app = Get-Content -LiteralPath $appPath -Raw
 $identity = Get-Content -LiteralPath $identityPath -Raw
 $diagnostics = Get-Content -LiteralPath $diagnosticsPath -Raw
@@ -72,6 +74,21 @@ foreach ($token in @(
 }
 
 foreach ($token in @(
+    'CreateSupportBundleCommand',
+    'OpenSupportFolderCommand',
+    'OpenLatestSupportBundleCommand',
+    'LatestSupportBundlePath',
+    'SupportBundleService.CreateBundle()',
+    'FindLatestSupportBundlePath',
+    'AIWordPressManager_Support_*.zip',
+    'Ctrl + Click version'
+)) {
+    if (-not $help.Contains($token)) {
+        throw "Help support workflow is missing contract token: $token"
+    }
+}
+
+foreach ($token in @(
     'BuildIdentityDisplay.Apply(mainWindow)',
     'BuildIdentityDiagnostics.LogOnce()',
     'Version {Version} • Branch {Branch}',
@@ -79,11 +96,15 @@ foreach ($token in @(
     'BuildIdentitySupportSnapshot.WriteOnce()',
     'BuildIdentitySupportSnapshot.SnapshotPath',
     'Clipboard.SetText(DiagnosticText)',
-    'MouseLeftButtonUp += HandleBuildIdentityClick',
+    'MouseLeftButtonUp += CopyBuildIdentityToClipboard',
+    'CreateSupportContextMenu()',
+    'Create support bundle ZIP',
+    'Open support bundles folder',
+    'Open support snapshot',
     'SupportBundleService.CreateBundle()',
     'ModifierKeys.Control',
     'Cursors.Hand',
-    'Ctrl+Click to create a diagnostic support ZIP.',
+    'Right-click for support actions.',
     'AssemblyMetadataAttribute',
     'SourceBranch',
     'SourceCommit',
@@ -173,4 +194,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, build identity, diagnostics logging, support snapshot, and ZIP bundle contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, build identity, diagnostics logging, support snapshot, ZIP bundle, and Help support actions validated successfully.' -ForegroundColor Green
