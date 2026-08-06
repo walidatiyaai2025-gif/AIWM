@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Threading;
 using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop
@@ -12,11 +13,7 @@ namespace AIWordPressManager.Desktop
         [ModuleInitializer]
         internal static void Initialize()
         {
-            EventManager.RegisterClassHandler(
-                typeof(MainWindow),
-                FrameworkElement.LoadedEvent,
-                new RoutedEventHandler(OnWindowLoaded),
-                true);
+            EventManager.RegisterClassHandler(typeof(MainWindow), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnWindowLoaded), true);
         }
 
         private static void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -24,7 +21,6 @@ namespace AIWordPressManager.Desktop
             if (sender is not MainWindow window || !ReferenceEquals(e.OriginalSource, window)) return;
             if (Attached.TryGetValue(window, out _)) return;
             if (window.DataContext is not MainWindowViewModel main) return;
-
             var state = new State(window, main);
             Attached.Add(window, state);
             state.Attach();
@@ -32,27 +28,40 @@ namespace AIWordPressManager.Desktop
 
         private sealed class State(MainWindow window, MainWindowViewModel main)
         {
+            private bool _refreshPending;
+
             public void Attach()
             {
                 main.SuggestedChanges.Items.CollectionChanged += OnChanged;
                 main.SuggestedChanges.PropertyChanged += OnPropertyChanged;
                 main.PropertyChanged += OnMainPropertyChanged;
                 window.Closed += OnClosed;
-                ApplyGate();
+                QueueApplyGate();
             }
 
-            private void OnChanged(object? sender, EventArgs e) => ApplyGate();
-            private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e) => ApplyGate();
+            private void OnChanged(object? sender, EventArgs e) => QueueApplyGate();
+            private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e) => QueueApplyGate();
 
             private void OnMainPropertyChanged(object? sender, PropertyChangedEventArgs e)
             {
                 if (e.PropertyName is nameof(MainWindowViewModel.CurrentPage) or nameof(MainWindowViewModel.CurrentJourneyTarget))
-                    ApplyGate();
+                    QueueApplyGate();
             }
 
-            private void ApplyGate()
+            private void QueueApplyGate()
             {
-                main.SuggestedChanges.RefreshApprovalJourneyReadiness();
+                if (_refreshPending || window.Dispatcher.HasShutdownStarted) return;
+                _refreshPending = true;
+                window.Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    _refreshPending = false;
+                    await ApplyGateAsync();
+                }), DispatcherPriority.ContextIdle);
+            }
+
+            private async Task ApplyGateAsync()
+            {
+                await main.SuggestedChanges.RefreshApprovalJourneyReadinessAsync();
                 main.RefreshFirstJourneySidebar();
 
                 if (!main.Sites.IsFirstJourneyReady ||
