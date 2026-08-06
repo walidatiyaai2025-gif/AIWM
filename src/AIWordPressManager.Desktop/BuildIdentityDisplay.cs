@@ -10,7 +10,8 @@ internal static class BuildIdentityDisplay
     private const string FooterMarker = "AI WordPress Website Manager • Offline-first";
 
     public static string Version { get; } = ResolveVersion();
-    public static string Branch { get; } = ResolveBranch();
+    public static string Branch { get; } = ResolveMetadata("SourceBranch", "unknown");
+    public static string Commit { get; } = ResolveCommit();
     public static string DisplayText => $"Version {Version} • Branch {Branch}";
 
     public static void Apply(Window window)
@@ -23,7 +24,7 @@ internal static class BuildIdentityDisplay
 
         footer.Text = DisplayText;
         footer.FontWeight = FontWeights.SemiBold;
-        footer.ToolTip = $"Application version: {Version}\nSource branch: {Branch}";
+        footer.ToolTip = $"Application version: {Version}\nSource branch: {Branch}\nSource commit: {Commit}";
     }
 
     private static TextBlock? FindFooterTextBlock(DependencyObject parent)
@@ -53,12 +54,18 @@ internal static class BuildIdentityDisplay
         return assembly.GetName().Version?.ToString(3) ?? "unknown";
     }
 
-    private static string ResolveBranch()
+    private static string ResolveCommit()
+    {
+        var value = ResolveMetadata("SourceCommit", "unknown");
+        return value.Length > 8 ? value[..8] : value;
+    }
+
+    private static string ResolveMetadata(string key, string fallback)
     {
         var metadata = typeof(BuildIdentityDisplay).Assembly
             .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(attribute => string.Equals(attribute.Key, "SourceBranch", StringComparison.Ordinal));
+            .FirstOrDefault(attribute => string.Equals(attribute.Key, key, StringComparison.Ordinal));
 
-        return string.IsNullOrWhiteSpace(metadata?.Value) ? "unknown" : metadata.Value;
+        return string.IsNullOrWhiteSpace(metadata?.Value) ? fallback : metadata.Value;
     }
 }
