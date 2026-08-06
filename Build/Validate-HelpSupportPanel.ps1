@@ -38,7 +38,13 @@ foreach ($token in @(
     'RetryDelay',
     'TryInjectAsync',
     'Task.Delay(RetryDelay)',
-    'TextTrimming.CharacterEllipsis'
+    'TextTrimming.CharacterEllipsis',
+    'FindPanelContainingCommand',
+    'viewModel.Help.OpenGuideCommand',
+    'ReferenceEquals(button.Command, expectedCommand)',
+    'FindPanelContainingHeading',
+    'using System.Windows.Input',
+    'using AIWordPressManager.Desktop.ViewModels'
 )) {
     if (-not $injector.Contains($token)) {
         throw "Help support panel is missing contract token: $token"
@@ -62,4 +68,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Resilient Help Support & Diagnostics panel, status, path, and command contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Localization-safe Help Support & Diagnostics panel, status, path, retries, and command contracts validated successfully.' -ForegroundColor Green
