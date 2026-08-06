@@ -95,6 +95,10 @@ internal static class BuildIdentityDisplay
         createBundle.Click += (_, _) => CreateAndRevealSupportBundle();
         menu.Items.Add(createBundle);
 
+        var verifyBundle = new MenuItem { Header = "Verify latest support bundle" };
+        verifyBundle.Click += (_, _) => VerifyLatestSupportBundle(verifyBundle);
+        menu.Items.Add(verifyBundle);
+
         var openFolder = new MenuItem { Header = "Open support bundles folder" };
         openFolder.Click += (_, _) => OpenSupportBundlesFolder();
         menu.Items.Add(openFolder);
@@ -149,6 +153,24 @@ internal static class BuildIdentityDisplay
         BuildIdentitySupportSnapshot.WriteOnce();
         var bundlePath = SupportBundleService.CreateBundle();
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{bundlePath}\"") { UseShellExecute = true });
+    }
+
+    private static void VerifyLatestSupportBundle(MenuItem menuItem)
+    {
+        var latest = SupportBundleService.FindLatestBundle();
+        if (string.IsNullOrWhiteSpace(latest))
+        {
+            menuItem.Header = "No support bundle to verify";
+            return;
+        }
+
+        var result = SupportBundleService.VerifyBundle(latest);
+        menuItem.Header = result.IsValid
+            ? $"Verified {result.VerifiedEntries}/{result.ExpectedEntries} entries"
+            : $"Verification failed ({result.Errors.Count} errors)";
+        menuItem.ToolTip = result.IsValid
+            ? "All recorded SHA-256 values match."
+            : string.Join(Environment.NewLine, result.Errors);
     }
 
     private static void OpenSupportBundlesFolder()
