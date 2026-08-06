@@ -11,7 +11,9 @@ $sitesViewModelPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewMo
 $siteScopedScreens = @(
     (Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\WordPressExplorerViewModel.cs'),
     (Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\SeoAuditViewModel.cs'),
-    (Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\ContentAuditViewModel.cs')
+    (Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\ContentAuditViewModel.cs'),
+    (Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\BrokenLinksViewModel.cs'),
+    (Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\InternalLinksViewModel.cs')
 )
 
 foreach ($path in @($contractPath, $implementationPath, $sitesViewModelPath) + $siteScopedScreens) {
