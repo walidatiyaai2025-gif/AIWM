@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WpfApplication = System.Windows.Application;
 
 namespace AIWordPressManager.Desktop;
 
@@ -22,8 +23,7 @@ internal static class LiveDiagnosticsCenterExperience
     private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
         var exception = e.Exception.Flatten();
-        ProfessionalNotificationCenter.Publish(NotificationSeverity.Error, "Background task failed",
-            exception.InnerExceptions.FirstOrDefault()?.Message ?? exception.Message,
+        NotificationHub.Publish("Error", "Background task failed",
             exception.ToString(), "TaskScheduler");
         e.SetObserved();
     }
@@ -31,8 +31,8 @@ internal static class LiveDiagnosticsCenterExperience
     private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         if (e.ExceptionObject is not Exception exception) return;
-        ProfessionalNotificationCenter.Publish(NotificationSeverity.Error, "Unhandled application error",
-            exception.Message, exception.ToString(), "AppDomain");
+        NotificationHub.Publish("Error", "Unhandled application error",
+            exception.ToString(), "AppDomain");
     }
 
     private static void OnMainWindowLoaded(object sender, RoutedEventArgs e)
@@ -118,8 +118,8 @@ internal sealed class LiveDiagnosticsCenterWindow : Window
         collect.Click += (_, _) =>
         {
             GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
-            ProfessionalNotificationCenter.Publish(NotificationSeverity.Success, "Memory collection completed",
-                "A full managed garbage collection cycle completed.", null, "Live Diagnostics");
+            NotificationHub.Publish("Success", "Memory collection completed",
+                "A full managed garbage collection cycle completed.", "Live Diagnostics");
             RefreshSnapshot();
         };
         var copy = CreateButton("Copy report"); copy.Margin = new Thickness(8, 0, 0, 0);
@@ -142,7 +142,7 @@ internal sealed class LiveDiagnosticsCenterWindow : Window
     }
 
     private static IEnumerable<Window> GetWindows() =>
-        Application.Current?.Windows.OfType<Window>() ?? Enumerable.Empty<Window>();
+        WpfApplication.Current?.Windows.OfType<Window>() ?? Enumerable.Empty<Window>();
 
     private void RefreshSnapshot()
     {
