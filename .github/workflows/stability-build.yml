@@ -57,6 +57,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-ApprovalQueueFirstJourney.ps1
 
+      - name: Validate Execution Center first journey
+        shell: pwsh
+        run: .\Build\Validate-ExecutionCenterFirstJourney.ps1
+
       - name: Validate unified current-site context
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
