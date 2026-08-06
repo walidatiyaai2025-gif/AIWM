@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Contracts and compile validation
+    name: Contracts, compile and test validation
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -58,3 +58,16 @@ jobs:
       - name: Compile solution
         shell: pwsh
         run: dotnet build ./AIWordPressManager.sln -c Release --no-restore --nologo --maxcpucount:1 -p:EnableWindowsTargeting=true -p:ContinuousIntegrationBuild=true -p:SourceBranchName=${{ github.ref_name }} -p:SourceCommitSha=${{ github.sha }}
+
+      - name: Run non-UI tests
+        shell: pwsh
+        run: dotnet test ./AIWordPressManager.sln -c Release --no-build --nologo --filter "FullyQualifiedName!~UI" -p:EnableWindowsTargeting=true --logger "trx;LogFileName=fast-validation-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-validation-test-results-${{ github.run_number }}
+          path: '**/TestResults/*.trx'
+          if-no-files-found: ignore
+          retention-days: 7
