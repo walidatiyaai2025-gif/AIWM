@@ -27,10 +27,16 @@ foreach ($token in @(
     'MaximumRetainedBundles = 10',
     'DeleteExpiredBundles(bundlePath)',
     'Skip(MaximumRetainedBundles - 1)',
-    'Retention: latest {MaximumRetainedBundles} support bundles'
+    'Retention: latest {MaximumRetainedBundles} support bundles',
+    'using System.Security.Cryptography',
+    'SHA256.HashData(bytes)',
+    'Convert.ToHexString',
+    'Included entries and SHA-256',
+    'Integrity: SHA-256 is recorded',
+    'IDictionary<string, string> entryHashes'
 )) {
     if (-not $bundle.Contains($token)) {
-        throw "Support bundle security or retention contract is missing token: $token"
+        throw "Support bundle security, retention, or integrity contract is missing token: $token"
     }
 }
 
@@ -38,4 +44,4 @@ if ($bundle.Contains('source.CopyTo(target)')) {
     throw 'Support bundle logs must not be copied as raw bytes without redaction.'
 }
 
-Write-Host 'Support bundle redaction, manifest, and retention contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Support bundle redaction, manifest, retention, and SHA-256 integrity contracts validated successfully.' -ForegroundColor Green
