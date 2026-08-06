@@ -2,8 +2,10 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
@@ -125,7 +127,6 @@ internal static class HelpSupportPanelInjector
             Foreground = window.TryFindResource("TextSecondaryBrush") as Brush,
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            ToolTip = "Latest support bundle path",
             Margin = new Thickness(0, 0, 0, 14)
         };
         latestPath.SetBinding(
@@ -169,7 +170,40 @@ internal static class HelpSupportPanelInjector
         return button;
     }
 
-    private static StackPanel? FindHelpRootPanel(DependencyObject parent)
+    private static StackPanel? FindHelpRootPanel(Window window)
+    {
+        if (window.DataContext is MainWindowViewModel viewModel)
+        {
+            var commandPanel = FindPanelContainingCommand(window, viewModel.Help.OpenGuideCommand);
+            if (commandPanel is not null)
+                return commandPanel;
+        }
+
+        return FindPanelContainingHeading(window);
+    }
+
+    private static StackPanel? FindPanelContainingCommand(DependencyObject parent, ICommand expectedCommand)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < count; index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is Button button && ReferenceEquals(button.Command, expectedCommand))
+            {
+                var panel = FindAncestorStackPanel(button);
+                if (panel is not null)
+                    return panel;
+            }
+
+            var nested = FindPanelContainingCommand(child, expectedCommand);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
+    }
+
+    private static StackPanel? FindPanelContainingHeading(DependencyObject parent)
     {
         var count = VisualTreeHelper.GetChildrenCount(parent);
         for (var index = 0; index < count; index++)
@@ -178,10 +212,12 @@ internal static class HelpSupportPanelInjector
             if (child is TextBlock textBlock &&
                 string.Equals(textBlock.Text, HelpHeading, StringComparison.Ordinal))
             {
-                return FindAncestorStackPanel(textBlock);
+                var panel = FindAncestorStackPanel(textBlock);
+                if (panel is not null)
+                    return panel;
             }
 
-            var nested = FindHelpRootPanel(child);
+            var nested = FindPanelContainingHeading(child);
             if (nested is not null)
                 return nested;
         }
