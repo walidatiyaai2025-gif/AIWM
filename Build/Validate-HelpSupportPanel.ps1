@@ -26,11 +26,19 @@ foreach ($token in @(
     'Help.VerifyLatestSupportBundleCommand',
     'Help.OpenLatestSupportBundleCommand',
     'Help.OpenSupportFolderCommand',
+    'Help.SupportBundleVerificationStatus',
+    'Help.LatestSupportBundlePath',
     'PrimaryButtonStyle',
     'SecondaryButtonStyle',
     'DispatcherPriority.Loaded',
     'ConditionalWeakTable<Window, object>',
-    'InjectedWindows'
+    'InjectedWindows',
+    'PendingWindows',
+    'MaximumInjectionAttempts',
+    'RetryDelay',
+    'TryInjectAsync',
+    'Task.Delay(RetryDelay)',
+    'TextTrimming.CharacterEllipsis'
 )) {
     if (-not $injector.Contains($token)) {
         throw "Help support panel is missing contract token: $token"
@@ -45,11 +53,13 @@ foreach ($token in @(
     'CreateSupportBundleCommand',
     'VerifyLatestSupportBundleCommand',
     'OpenLatestSupportBundleCommand',
-    'OpenSupportFolderCommand'
+    'OpenSupportFolderCommand',
+    'SupportBundleVerificationStatus',
+    'LatestSupportBundlePath'
 )) {
     if (-not $help.Contains($token)) {
-        throw "HelpViewModel is missing command required by the support panel: $token"
+        throw "HelpViewModel is missing state or command required by the support panel: $token"
     }
 }
 
-Write-Host 'Help Support & Diagnostics panel contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Resilient Help Support & Diagnostics panel, status, path, and command contracts validated successfully.' -ForegroundColor Green
