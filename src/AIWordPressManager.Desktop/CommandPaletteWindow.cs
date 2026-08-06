@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace AIWordPressManager.Desktop;
 
@@ -135,18 +134,18 @@ public sealed class CommandPaletteWindow : Window
         border.SetValue(Border.MarginProperty, new Thickness(2));
         border.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
 
-        var panel = new FrameworkElementFactory(typeof(Grid));
-        panel.AppendChild(CreateColumnDefinitions());
+        var panel = new FrameworkElementFactory(typeof(DockPanel));
+        panel.SetValue(DockPanel.LastChildFillProperty, true);
 
         var icon = new FrameworkElementFactory(typeof(TextBlock));
         icon.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(PaletteCommand.Icon)));
         icon.SetValue(TextBlock.FontSizeProperty, 20d);
-        icon.SetValue(TextBlock.WidthProperty, 34d);
+        icon.SetValue(TextBlock.WidthProperty, 38d);
         icon.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+        icon.SetValue(DockPanel.DockProperty, Dock.Left);
         panel.AppendChild(icon);
 
         var content = new FrameworkElementFactory(typeof(StackPanel));
-        content.SetValue(Grid.ColumnProperty, 1);
         var title = new FrameworkElementFactory(typeof(TextBlock));
         title.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(PaletteCommand.BilingualTitle)));
         title.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
@@ -162,12 +161,6 @@ public sealed class CommandPaletteWindow : Window
         border.AppendChild(panel);
         template.VisualTree = border;
         return template;
-    }
-
-    private static FrameworkElementFactory CreateColumnDefinitions()
-    {
-        var grid = new FrameworkElementFactory(typeof(Grid));
-        return grid;
     }
 
     private void Refresh()
