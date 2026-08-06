@@ -10,10 +10,11 @@ $dashboardPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\ViewModels\
 $appPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\App.GuidedTour.cs'
 $identityPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDisplay.cs'
 $diagnosticsPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentityDiagnostics.cs'
+$snapshotPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\BuildIdentitySupportSnapshot.cs'
 $projectPath = Join-Path $repoRoot 'src\AIWordPressManager.Desktop\AIWordPressManager.Desktop.csproj'
 $buildRunPath = Join-Path $repoRoot 'Build-And-Run.bat'
 
-foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diagnosticsPath, $projectPath, $buildRunPath)) {
+foreach ($path in @($receiptPath, $dashboardPath, $appPath, $identityPath, $diagnosticsPath, $snapshotPath, $projectPath, $buildRunPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Missing execution receipt or build identity contract file: $path"
     }
@@ -24,6 +25,7 @@ $dashboard = Get-Content -LiteralPath $dashboardPath -Raw
 $app = Get-Content -LiteralPath $appPath -Raw
 $identity = Get-Content -LiteralPath $identityPath -Raw
 $diagnostics = Get-Content -LiteralPath $diagnosticsPath -Raw
+$snapshot = Get-Content -LiteralPath $snapshotPath -Raw
 $project = Get-Content -LiteralPath $projectPath -Raw
 $buildRun = Get-Content -LiteralPath $buildRunPath -Raw
 
@@ -72,6 +74,8 @@ foreach ($token in @(
     'BuildIdentityDiagnostics.LogOnce()',
     'Version {Version} • Branch {Branch}',
     'DiagnosticText',
+    'BuildIdentitySupportSnapshot.WriteOnce()',
+    'BuildIdentitySupportSnapshot.SnapshotPath',
     'Clipboard.SetText(DiagnosticText)',
     'MouseLeftButtonUp += CopyBuildIdentityToClipboard',
     'Cursors.Hand',
@@ -95,6 +99,21 @@ foreach ($token in @(
 )) {
     if (-not $diagnostics.Contains($token)) {
         throw "Build identity diagnostics logging is missing contract token: $token"
+    }
+}
+
+foreach ($token in @(
+    'support-snapshot.txt',
+    'RuntimeInformation.OSDescription',
+    'RuntimeInformation.FrameworkDescription',
+    'BuildIdentityDisplay.FullCommit',
+    'Working set MB',
+    'Base directory',
+    'File.WriteAllText',
+    'Interlocked.Exchange'
+)) {
+    if (-not $snapshot.Contains($token)) {
+        throw "Persistent support snapshot is missing contract token: $token"
     }
 }
 
@@ -134,4 +153,4 @@ foreach ($token in @(
     }
 }
 
-Write-Host 'Execution receipts, copyable build identity, and diagnostics logging contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, copyable build identity, diagnostics logging, and support snapshot contracts validated successfully.' -ForegroundColor Green
