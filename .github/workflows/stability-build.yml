@@ -33,6 +33,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-DashboardJourneyState.ps1
 
+      - name: Validate unified current-site context
+        shell: pwsh
+        run: .\Build\Validate-CurrentSiteContext.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
