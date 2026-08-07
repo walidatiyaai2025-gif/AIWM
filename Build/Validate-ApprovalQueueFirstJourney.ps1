@@ -57,9 +57,17 @@ foreach ($token in @(
     'ApplyApprovalQueueJourneyGate',
     'CurrentJourneyTarget = "Approval Queue"',
     '!main.SuggestedChanges.IsFirstJourneyReady',
-    'main.SuggestedChanges.IsApprovalJourneyReady'
+    'main.SuggestedChanges.IsApprovalJourneyReady',
+    'ApplyGateSafeAsync',
+    'catch (Exception exception)',
+    'Debug.WriteLine',
+    '_refreshPending = false;'
 )) {
     if (-not $gate.Contains($token)) { throw "Approval Queue gate is missing token: $token" }
+}
+
+if ($gate.Contains('new Action(async')) {
+    throw 'Approval Queue gate must not use an async-void Dispatcher callback.'
 }
 
 foreach ($token in @(
@@ -70,4 +78,4 @@ foreach ($token in @(
     if (-not $sidebar.Contains($token)) { throw "First journey sidebar is missing Approval Queue token: $token" }
 }
 
-Write-Host 'Approval Queue decisions, application contract import, execution readiness, navigation gate and sidebar contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Approval Queue decisions, imports, exception-safe async refresh, execution readiness, navigation gate and sidebar contracts validated successfully.' -ForegroundColor Green
