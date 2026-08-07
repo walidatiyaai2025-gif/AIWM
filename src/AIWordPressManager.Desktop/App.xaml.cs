@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Windows;
+using AIWordPressManager.AI;
 using AIWordPressManager.Application.Abstractions;
 using AIWordPressManager.Application.Abstractions.Persistence;
 using AIWordPressManager.Desktop.Services;
@@ -149,9 +150,9 @@ public partial class App : System.Windows.Application
                 Environment.NewLine,
                 new string('=', 80),
                 DateTimeOffset.Now.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
-                $"Version: {BuildIdentityDiagnostics.Version}",
-                $"Branch: {BuildIdentityDiagnostics.Branch}",
-                $"Commit: {BuildIdentityDiagnostics.Commit}",
+                $"Version: {BuildIdentityDisplay.Version}",
+                $"Branch: {BuildIdentityDisplay.Branch}",
+                $"Commit: {BuildIdentityDisplay.Commit}",
                 exception.ToString(),
                 string.Empty);
             System.IO.File.AppendAllText(path, entry);
@@ -325,26 +326,22 @@ public partial class App : System.Windows.Application
                 .AddCommandLine(args);
         })
         .UseSerilog((context, _, loggerConfiguration) => loggerConfiguration.ReadFrom.Configuration(context.Configuration))
-        .ConfigureServices((context, services) =>
+        .ConfigureServices((_, services) =>
         {
             services.AddInfrastructure();
-            services.AddPersistence(context.Configuration);
+            services.AddPersistence();
             services.AddWordPress();
-            services.AddAI();
-            services.AddAutomation();
-            services.AddReporting();
+            services.AddAi();
 
             services.AddSingleton<IThemeService, ThemeService>();
             services.AddSingleton<ILocalizationService, LocalizationService>();
             services.AddSingleton<IDialogService, DialogService>();
-            services.AddSingleton<ISecretProtectionService, DpapiSecretProtectionService>();
-            services.AddSingleton<IOfflineSnapshotService, OfflineSnapshotService>();
             services.AddSingleton<UiOperationService>();
             services.AddSingleton<GlobalErrorPresenter>();
             services.AddSingleton<MainWindowViewModel>();
             services.AddSingleton<MainWindow>();
             services.AddSingleton<SitesViewModel>();
-            services.AddSingleton<SiteWizardViewModel>();
+            services.AddSingleton<AddSiteWizardViewModel>();
             services.AddSingleton<WordPressExplorerViewModel>();
             services.AddSingleton<ContentAuditViewModel>();
             services.AddSingleton<SeoAuditViewModel>();
