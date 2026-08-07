@@ -17,6 +17,13 @@ $state = Get-Content -LiteralPath $statePath -Raw
 $bootstrap = Get-Content -LiteralPath $bootstrapPath -Raw
 $dashboardJourney = Get-Content -LiteralPath $dashboardJourneyPath -Raw
 
+$definitionsStart = $state.IndexOf('var definitions = new[]', [StringComparison]::Ordinal)
+$definitionsEnd = $state.IndexOf('FirstJourneySidebarPages.Clear();', [StringComparison]::Ordinal)
+if ($definitionsStart -lt 0 -or $definitionsEnd -le $definitionsStart) {
+    throw 'First journey sidebar definitions block could not be located.'
+}
+$orderedState = $state.Substring($definitionsStart, $definitionsEnd - $definitionsStart)
+
 $orderedTargets = @(
     '"Dashboard"',
     '"Sites"',
@@ -30,7 +37,7 @@ $orderedTargets = @(
 
 $lastIndex = -1
 foreach ($target in $orderedTargets) {
-    $index = $state.IndexOf($target, [StringComparison]::Ordinal)
+    $index = $orderedState.IndexOf($target, [StringComparison]::Ordinal)
     if ($index -lt 0) { throw "First journey sidebar target is missing: $target" }
     if ($index -le $lastIndex) { throw "First journey sidebar target order is invalid at: $target" }
     $lastIndex = $index
