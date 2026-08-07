@@ -143,27 +143,56 @@ internal static class ApprovalQueueFirstJourneyExperience
     {
         private Border? _card;
         private bool _refreshPending;
+        private bool _refreshRunning;
+        private bool _closed;
 
         public void Attach()
         {
-            main.PropertyChanged += OnChanged;
-            main.SuggestedChanges.PropertyChanged += OnChanged;
+            main.PropertyChanged += OnMainChanged;
+            main.SuggestedChanges.PropertyChanged += OnSuggestedChangesChanged;
             main.SuggestedChanges.Items.CollectionChanged += OnCollectionChanged;
             window.Closed += OnClosed;
             QueueRefresh();
         }
 
-        private void OnChanged(object? sender, PropertyChangedEventArgs e) => QueueRefresh();
+        private void OnMainChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(MainWindowViewModel.CurrentPage) or nameof(MainWindowViewModel.CurrentJourneyTarget))
+                QueueRefresh();
+        }
+
+        private void OnSuggestedChangesChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(SuggestedChangesViewModel.IsBusy) or
+                nameof(SuggestedChangesViewModel.SelectedItem) or
+                nameof(SuggestedChangesViewModel.IsApprovalJourneyReady))
+            {
+                QueueRefresh();
+            }
+        }
+
         private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueRefresh();
 
         private void QueueRefresh()
         {
-            if (_refreshPending || window.Dispatcher.HasShutdownStarted) return;
+            if (_closed || _refreshPending || _refreshRunning || window.Dispatcher.HasShutdownStarted) return;
             _refreshPending = true;
-            window.Dispatcher.BeginInvoke(new Action(async () =>
+            _ = window.Dispatcher.BeginInvoke(new Action(() =>
             {
                 _refreshPending = false;
+                _ = RefreshSafeAsync();
+            }));
+        }
+
+        private async Task RefreshSafeAsync()
+        {
+            if (_closed || _refreshRunning) return;
+            _refreshRunning = true;
+            try
+            {
                 await main.SuggestedChanges.RefreshApprovalJourneyReadinessAsync();
+                if (_closed || window.Dispatcher.HasShutdownStarted) return;
+
                 _card ??= Install(window, main);
                 if (_card is not null)
                 {
@@ -171,13 +200,25 @@ internal static class ApprovalQueueFirstJourneyExperience
                     _card.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
                     _card.IsHitTestVisible = visible;
                 }
-            }));
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Debug.WriteLine($"Approval Queue journey refresh failed: {exception}");
+            }
+            finally
+            {
+                _refreshRunning = false;
+            }
         }
 
         private void OnClosed(object? sender, EventArgs e)
         {
-            main.PropertyChanged -= OnChanged;
-            main.SuggestedChanges.PropertyChanged -= OnChanged;
+            _closed = true;
+            main.PropertyChanged -= OnMainChanged;
+            main.SuggestedChanges.PropertyChanged -= OnSuggestedChangesChanged;
             main.SuggestedChanges.Items.CollectionChanged -= OnCollectionChanged;
             window.Closed -= OnClosed;
         }
