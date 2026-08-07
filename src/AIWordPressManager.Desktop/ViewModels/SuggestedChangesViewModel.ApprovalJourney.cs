@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using AIWordPressManager.Application.Changes;
 
 namespace AIWordPressManager.Desktop.ViewModels;
 
