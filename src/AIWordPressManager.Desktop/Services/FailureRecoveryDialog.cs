@@ -55,7 +55,7 @@ public static class FailureRecoveryDialog
     {
         var completion = new TaskCompletionSource<FailureRecoveryDecision>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var window = new Window
         {
@@ -232,6 +232,7 @@ public static class FailureRecoveryDialog
         window.Closed += (_, _) =>
         {
             linkedCancellation.Cancel();
+            linkedCancellation.Dispose();
             completion.TrySetResult(FailureRecoveryDecision.Closed);
         };
 
@@ -250,7 +251,7 @@ public static class FailureRecoveryDialog
             return;
 
         var button = CreateButton(text);
-        button.Click += async (_, _) => await execute();
+        button.Click += (_, _) => _ = execute();
         buttons.Add(button);
         panel.Children.Add(button);
     }
