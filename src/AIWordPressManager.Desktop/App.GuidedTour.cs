@@ -20,7 +20,10 @@ public partial class App
         if (mainWindow.DataContext is not MainWindowViewModel viewModel)
             return;
 
+        BuildIdentityDisplay.Apply(mainWindow);
+        BuildIdentityDiagnostics.LogOnce();
         BindSiteIsolation(viewModel);
+        viewModel.BindExecutionReceiptStore();
 
         if (_guidedTourLaunchChecked)
             return;

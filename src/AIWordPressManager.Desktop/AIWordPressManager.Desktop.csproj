@@ -5,11 +5,20 @@
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>Assets\Brand\app_icon.ico</ApplicationIcon>
-    <Version>2.2.6</Version>
-    <AssemblyVersion>2.2.6.0</AssemblyVersion>
-    <FileVersion>2.2.6.0</FileVersion>
-    <InformationalVersion>2.2.6</InformationalVersion>
+    <Version>2.3.1</Version>
+    <AssemblyVersion>2.3.1.0</AssemblyVersion>
+    <FileVersion>2.3.1.0</FileVersion>
+    <InformationalVersion>2.3.1</InformationalVersion>
+    <SourceBranchName Condition="'$(SourceBranchName)' == '' and '$(GITHUB_HEAD_REF)' != ''">$(GITHUB_HEAD_REF)</SourceBranchName>
+    <SourceBranchName Condition="'$(SourceBranchName)' == '' and '$(GITHUB_REF_NAME)' != ''">$(GITHUB_REF_NAME)</SourceBranchName>
+    <SourceBranchName Condition="'$(SourceBranchName)' == ''">local</SourceBranchName>
+    <SourceCommitSha Condition="'$(SourceCommitSha)' == '' and '$(GITHUB_SHA)' != ''">$(GITHUB_SHA)</SourceCommitSha>
+    <SourceCommitSha Condition="'$(SourceCommitSha)' == ''">unknown</SourceCommitSha>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />
+    <AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />
+  </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\Brand\*.png" />
     <Resource Include="Assets\Brand\app_icon.ico" />

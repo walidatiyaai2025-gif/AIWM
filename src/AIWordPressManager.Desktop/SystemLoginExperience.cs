@@ -151,7 +151,7 @@ internal static class SystemDemoDataSeeder
         await UserSecurityStore.EnsureCreatedAsync(databasePath);
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         var commands = new[]
         {

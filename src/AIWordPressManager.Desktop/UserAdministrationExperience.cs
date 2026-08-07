@@ -155,7 +155,7 @@ namespace AIWordPressManager.Desktop
             var hash = HashPassword(password, salt);
             await using var connection = new SqliteConnection($"Data Source={databasePath}");
             await connection.OpenAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = "INSERT INTO SystemUsers(UserName,DisplayName,PasswordHash,PasswordSalt,IsActive,IsSystemAdmin,CreatedAtUtc) VALUES ($user,$display,$hash,$salt,1,0,$now); SELECT last_insert_rowid();";

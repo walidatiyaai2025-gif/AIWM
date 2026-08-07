@@ -33,6 +33,42 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-DashboardJourneyState.ps1
 
+      - name: Validate first user journey sidebar
+        shell: pwsh
+        run: .\Build\Validate-FirstUserJourneySidebar.ps1
+
+      - name: Validate Sites first journey
+        shell: pwsh
+        run: .\Build\Validate-SitesFirstJourney.ps1
+
+      - name: Validate WordPress Explorer first journey
+        shell: pwsh
+        run: .\Build\Validate-ExplorerFirstJourney.ps1
+
+      - name: Validate SEO Audit first journey
+        shell: pwsh
+        run: .\Build\Validate-SeoAuditFirstJourney.ps1
+
+      - name: Validate Suggested Changes first journey
+        shell: pwsh
+        run: .\Build\Validate-SuggestedChangesFirstJourney.ps1
+
+      - name: Validate Approval Queue first journey
+        shell: pwsh
+        run: .\Build\Validate-ApprovalQueueFirstJourney.ps1
+
+      - name: Validate Execution Center first journey
+        shell: pwsh
+        run: .\Build\Validate-ExecutionCenterFirstJourney.ps1
+
+      - name: Validate Evidence Center first journey
+        shell: pwsh
+        run: .\Build\Validate-EvidenceCenterFirstJourney.ps1
+
+      - name: Validate completed first journey summary
+        shell: pwsh
+        run: .\Build\Validate-FirstJourneyCompletion.ps1
+
       - name: Validate unified current-site context
         shell: pwsh
         run: .\Build\Validate-CurrentSiteContext.ps1
@@ -44,6 +80,22 @@ jobs:
       - name: Validate site-bound execution workflow
         shell: pwsh
         run: .\Build\Validate-SiteOperationGuard.ps1
+
+      - name: Validate execution receipts and audit trail
+        shell: pwsh
+        run: .\Build\Validate-ExecutionReceipts.ps1
+
+      - name: Validate support bundle redaction
+        shell: pwsh
+        run: .\Build\Validate-SupportBundleSecurity.ps1
+
+      - name: Validate support bundle build compatibility
+        shell: pwsh
+        run: .\Build\Validate-SupportBundleCompatibility.ps1
+
+      - name: Validate Help support diagnostics panel
+        shell: pwsh
+        run: .\Build\Validate-HelpSupportPanel.ps1
 
       - name: Restore
         shell: pwsh

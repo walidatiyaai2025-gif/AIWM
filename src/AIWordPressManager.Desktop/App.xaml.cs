@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Windows;
+using AIWordPressManager.AI;
 using AIWordPressManager.Application.Abstractions;
 using AIWordPressManager.Application.Abstractions.Persistence;
 using AIWordPressManager.Desktop.Services;
@@ -42,8 +43,6 @@ public partial class App : System.Windows.Application
             _host = CreateHostBuilder(e.Args).Build();
             RegisterGlobalExceptionHandlers();
 
-            // Building the host makes DI available without starting hosted background
-            // services. Scheduled synchronization starts only after login and first render.
             progress.Report(StartupProgress.Create(20, "Preparing application services", "Background services will start after the workspace is visible"));
 
             progress.Report(StartupProgress.Create(30, "Checking application folders", "Verifying logs, backups, documentation, and setup paths"));
@@ -100,9 +99,72 @@ public partial class App : System.Windows.Application
         {
             progress.Report(StartupProgress.Create(100, "Startup failed", exception.Message));
             Log.Fatal(exception, "Application startup failed.");
-            _host?.Services.GetService<GlobalErrorPresenter>()?.Show(exception, "Startup");
+
+            var crashLogPath = WriteStartupCrashLog(exception);
+            var presented = false;
+            try
+            {
+                var presenter = _host?.Services.GetService<GlobalErrorPresenter>();
+                if (presenter is not null)
+                {
+                    presenter.Show(exception, "Startup");
+                    presented = true;
+                }
+            }
+            catch (Exception presenterException)
+            {
+                Log.Error(presenterException, "Could not display the startup error presenter.");
+            }
+
+            if (!presented)
+            {
+                try
+                {
+                    MessageBox.Show(
+                        $"AI WordPress Manager could not start.\n\n{exception.Message}\n\nCrash log:\n{crashLogPath}",
+                        "Startup error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+                catch
+                {
+                }
+            }
+
             try { splash.Close(); } catch { }
             Shutdown(-1);
+        }
+    }
+
+    private static string WriteStartupCrashLog(Exception exception)
+    {
+        try
+        {
+            var directory = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AIWordPressManager",
+                "Logs");
+            System.IO.Directory.CreateDirectory(directory);
+            var path = System.IO.Path.Combine(directory, "startup-crash.log");
+            var entry = string.Join(
+                Environment.NewLine,
+                new string('=', 80),
+                DateTimeOffset.Now.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+                $"Version: {BuildIdentityDisplay.Version}",
+                $"Branch: {BuildIdentityDisplay.Branch}",
+                $"Commit: {BuildIdentityDisplay.Commit}",
+                exception.ToString(),
+                string.Empty);
+            System.IO.File.AppendAllText(path, entry);
+            return path;
+        }
+        catch
+        {
+            return System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AIWordPressManager",
+                "Logs",
+                "startup-crash.log");
         }
     }
 
@@ -124,7 +186,6 @@ public partial class App : System.Windows.Application
         }
         catch (Exception exception)
         {
-            // Background-service startup must not block or cover the active workspace.
             Log.Error(exception, "Hosted background services could not start after UI initialization.");
         }
     }
@@ -160,7 +221,6 @@ public partial class App : System.Windows.Application
         }
         catch
         {
-            // Startup telemetry must never block the application.
         }
     }
 
@@ -225,7 +285,6 @@ public partial class App : System.Windows.Application
         }
         catch
         {
-            // Global exception handling must never throw another exception.
         }
     }
 
@@ -259,23 +318,28 @@ public partial class App : System.Windows.Application
         .UseContentRoot(AppContext.BaseDirectory)
         .ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.SetBasePath(AppContext.BaseDirectory);
-            configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-            configuration.AddEnvironmentVariables();
+            configuration.Sources.Clear();
+            configuration
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+                .AddEnvironmentVariables(prefix: "AIWM_")
+                .AddCommandLine(args);
         })
-        .UseSerilog((context, services, logger) =>
-        {
-            var paths = services.GetRequiredService<IApplicationPathService>();
-            logger.ReadFrom.Configuration(context.Configuration)
-                .Enrich.FromLogContext()
-                .WriteTo.File(System.IO.Path.Combine(paths.GetLogsDirectory(), "application-.log"), rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14);
-        })
-        .ConfigureServices(services =>
+        .UseSerilog((context, _, loggerConfiguration) => loggerConfiguration.ReadFrom.Configuration(context.Configuration))
+        .ConfigureServices((_, services) =>
         {
             services.AddInfrastructure();
             services.AddPersistence();
-            AIWordPressManager.WordPress.DependencyInjection.AddWordPress(services);
-            AIWordPressManager.AI.DependencyInjection.AddAi(services);
+            services.AddWordPress();
+            services.AddAi();
+
+            services.AddSingleton<IThemeService, ThemeService>();
+            services.AddSingleton<ILocalizationService, LocalizationService>();
+            services.AddSingleton<IDialogService, DialogService>();
+            services.AddSingleton<UiOperationService>();
+            services.AddSingleton<GlobalErrorPresenter>();
+            services.AddSingleton<MainWindowViewModel>();
+            services.AddSingleton<MainWindow>();
             services.AddSingleton<AIWordPressManager.Desktop.Services.Sites.ICurrentSiteContext, AIWordPressManager.Desktop.Services.Sites.CurrentSiteContext>();
             services.AddSingleton<AIWordPressManager.Desktop.Services.Sites.ISiteOperationGuard, AIWordPressManager.Desktop.Services.Sites.SiteOperationGuard>();
             services.AddSingleton<AddSiteWizardValidator>();
@@ -316,13 +380,6 @@ public partial class App : System.Windows.Application
             services.AddSingleton<LogsViewModel>();
             services.AddSingleton<HelpViewModel>();
             services.AddHostedService<ScheduledWordPressSyncService>();
-            services.AddSingleton<IDialogService, DialogService>();
             services.AddSingleton<AiErrorAdvisorService>();
-            services.AddSingleton<GlobalErrorPresenter>();
-            services.AddSingleton<IThemeService, ThemeService>();
-            services.AddSingleton<UiOperationService>();
-            services.AddSingleton<ILocalizationService, LocalizationService>();
-            services.AddSingleton<MainWindowViewModel>();
-            services.AddSingleton<MainWindow>();
         });
 }

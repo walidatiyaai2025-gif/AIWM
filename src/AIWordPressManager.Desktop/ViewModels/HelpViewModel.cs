@@ -18,6 +18,10 @@ public sealed partial class HelpViewModel : ObservableObject
         new("F1", "Context help", "Enable contextual help for the control under the pointer."),
         new("Ctrl + F1", "Guided workflow tour", "Resume or restart the interactive tour from site setup through verified execution."),
         new("Shift + F1", "Open user guide", "Open the bundled Word document."),
+        new("Ctrl + Click version", "Create support bundle", "Create a ZIP with build identity, logs, diagnostics, and recent execution receipts."),
+        new("Ctrl + Shift + B", "Create support bundle", "Create and reveal a sanitized support ZIP from any application screen."),
+        new("Ctrl + Shift + I", "Copy build identity", "Copy the application version, source branch, commit, and support snapshot path."),
+        new("Help support action", "Verify latest bundle", "Verify SHA-256 integrity and whether the bundle belongs to the current version, branch, and commit."),
         new("Ctrl + 1", "Dashboard", "Open the live dashboard."),
         new("Ctrl + 2", "Sites", "Open website management."),
         new("Ctrl + 3", "WordPress Explorer", "Open synchronized WordPress data."),
@@ -35,10 +39,17 @@ public sealed partial class HelpViewModel : ObservableObject
 
     [ObservableProperty] private string _guideVersion = "Part 81";
     [ObservableProperty] private string _guideStatus = "The bundled guide and interactive tour are ready.";
+    [ObservableProperty] private string _latestSupportBundlePath = FindLatestSupportBundlePath() ?? "No support bundle has been created yet.";
+    [ObservableProperty] private string _supportBundleVerificationStatus = "Not verified yet.";
+    [ObservableProperty] private string _supportBundleBuildCompatibilityStatus = "Build compatibility not checked yet.";
 
     public IAsyncRelayCommand OpenGuideCommand { get; }
     public IAsyncRelayCommand OpenStatusRoadmapCommand { get; }
     public IAsyncRelayCommand OpenDocumentationFolderCommand { get; }
+    public IAsyncRelayCommand CreateSupportBundleCommand { get; }
+    public IAsyncRelayCommand OpenSupportFolderCommand { get; }
+    public IAsyncRelayCommand OpenLatestSupportBundleCommand { get; }
+    public IAsyncRelayCommand VerifyLatestSupportBundleCommand { get; }
     public IRelayCommand ResumeGuidedTourCommand { get; }
     public IRelayCommand RestartGuidedTourCommand { get; }
 
@@ -48,12 +59,18 @@ public sealed partial class HelpViewModel : ObservableObject
         OpenGuideCommand = new AsyncRelayCommand(OpenGuideAsync);
         OpenStatusRoadmapCommand = new AsyncRelayCommand(OpenStatusRoadmapAsync);
         OpenDocumentationFolderCommand = new AsyncRelayCommand(OpenDocumentationFolderAsync);
+        CreateSupportBundleCommand = new AsyncRelayCommand(CreateSupportBundleAsync);
+        OpenSupportFolderCommand = new AsyncRelayCommand(OpenSupportFolderAsync);
+        OpenLatestSupportBundleCommand = new AsyncRelayCommand(OpenLatestSupportBundleAsync);
+        VerifyLatestSupportBundleCommand = new AsyncRelayCommand(VerifyLatestSupportBundleAsync);
         ResumeGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: false));
         RestartGuidedTourCommand = new RelayCommand(() => ShowGuidedTour(restart: true));
     }
 
     public string GuidePath => Path.Combine(AppContext.BaseDirectory, "Documentation", GuideFileName);
     public string StatusRoadmapPath => Path.Combine(AppContext.BaseDirectory, "Documentation", StatusRoadmapFileName);
+
+    private static string SupportFolderPath => SupportBundleService.BundlesDirectory;
 
     private void ShowGuidedTour(bool restart)
     {
@@ -68,6 +85,124 @@ public sealed partial class HelpViewModel : ObservableObject
             ? "The guided tour was restarted from the first step."
             : "The guided tour was opened at the saved step.";
     }
+
+    private async Task CreateSupportBundleAsync()
+    {
+        try
+        {
+            BuildIdentitySupportSnapshot.WriteOnce();
+            var bundlePath = SupportBundleService.CreateBundle();
+            LatestSupportBundlePath = bundlePath;
+            ApplyBundleVerification(bundlePath);
+            GuideStatus = $"Support bundle created and verified: {Path.GetFileName(bundlePath)}";
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{bundlePath}\"") { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            GuideStatus = exception.Message;
+            await _dialogService.ShowErrorAsync("Cannot create support bundle", exception.Message);
+        }
+    }
+
+    private async Task VerifyLatestSupportBundleAsync()
+    {
+        var latest = FindLatestSupportBundlePath();
+        if (string.IsNullOrWhiteSpace(latest) || !File.Exists(latest))
+        {
+            SupportBundleVerificationStatus = "No support bundle has been created yet.";
+            SupportBundleBuildCompatibilityStatus = "Build compatibility unavailable.";
+            GuideStatus = SupportBundleVerificationStatus;
+            await _dialogService.ShowErrorAsync("Support bundle not found", GuideStatus);
+            return;
+        }
+
+        LatestSupportBundlePath = latest;
+        var verification = ApplyBundleVerification(latest);
+        GuideStatus = $"{SupportBundleVerificationStatus} {SupportBundleBuildCompatibilityStatus}";
+
+        if (!verification.IsValid)
+        {
+            var details = verification.Errors.Count == 0
+                ? GuideStatus
+                : GuideStatus + Environment.NewLine + string.Join(Environment.NewLine, verification.Errors);
+            await _dialogService.ShowErrorAsync("Support bundle integrity failed", details);
+        }
+    }
+
+    private SupportBundleVerificationResult ApplyBundleVerification(string bundlePath)
+    {
+        var verification = SupportBundleService.VerifyBundle(bundlePath);
+        var compatibility = SupportBundleBuildCompatibility.Inspect(bundlePath);
+        SupportBundleVerificationStatus = FormatVerificationStatus(verification);
+        SupportBundleBuildCompatibilityStatus = FormatCompatibilityStatus(compatibility);
+        return verification;
+    }
+
+    private static string FormatVerificationStatus(SupportBundleVerificationResult verification)
+    {
+        return verification.IsValid
+            ? $"Integrity verified: {verification.VerifiedEntries}/{verification.ExpectedEntries} entries match manifest SHA-256 values."
+            : $"Integrity failed: {verification.VerifiedEntries}/{verification.ExpectedEntries} entries verified; {verification.Errors.Count} error(s).";
+    }
+
+    private static string FormatCompatibilityStatus(SupportBundleBuildCompatibilityResult compatibility)
+    {
+        if (!compatibility.IsAvailable)
+            return compatibility.Message;
+
+        if (compatibility.IsCurrentBuild)
+            return "Build compatibility verified: version, branch, and commit match the running application.";
+
+        var differences = new List<string>();
+        if (!compatibility.VersionMatches)
+            differences.Add($"version {compatibility.BundleVersion}");
+        if (!compatibility.BranchMatches)
+            differences.Add($"branch {compatibility.BundleBranch}");
+        if (!compatibility.CommitMatches)
+            differences.Add($"commit {compatibility.BundleCommit}");
+
+        return $"Bundle belongs to a different build: {string.Join(", ", differences)}.";
+    }
+
+    private async Task OpenSupportFolderAsync()
+    {
+        try
+        {
+            Directory.CreateDirectory(SupportFolderPath);
+            Process.Start(new ProcessStartInfo("explorer.exe", SupportFolderPath) { UseShellExecute = true });
+            GuideStatus = "Opened the support bundles folder.";
+        }
+        catch (Exception exception)
+        {
+            GuideStatus = exception.Message;
+            await _dialogService.ShowErrorAsync("Cannot open support folder", exception.Message);
+        }
+    }
+
+    private async Task OpenLatestSupportBundleAsync()
+    {
+        var latest = FindLatestSupportBundlePath();
+        if (string.IsNullOrWhiteSpace(latest) || !File.Exists(latest))
+        {
+            GuideStatus = "No support bundle has been created yet.";
+            await _dialogService.ShowErrorAsync("Support bundle not found", GuideStatus);
+            return;
+        }
+
+        try
+        {
+            LatestSupportBundlePath = latest;
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{latest}\"") { UseShellExecute = true });
+            GuideStatus = $"Selected {Path.GetFileName(latest)}.";
+        }
+        catch (Exception exception)
+        {
+            GuideStatus = exception.Message;
+            await _dialogService.ShowErrorAsync("Cannot open support bundle", exception.Message);
+        }
+    }
+
+    private static string? FindLatestSupportBundlePath() => SupportBundleService.FindLatestBundle();
 
     private async Task OpenGuideAsync()
     {
