@@ -81,7 +81,7 @@ Assert-Tokens 'Desktop project version and build metadata' $content.Project @(
 )
 
 Assert-Tokens 'Build-And-Run build identity' $content.BuildRun @(
-    'TARGET_BRANCH=feature/execution-receipts-and-audit-trail',
+    'TARGET_BRANCH=main',
     'git rev-parse HEAD', '/p:SourceBranchName="%TARGET_BRANCH%"',
     '/p:SourceCommitSha="%SOURCE_COMMIT%"'
 )
