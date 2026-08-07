@@ -101,6 +101,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-FailureRecoveryExperience.ps1
 
+      - name: Validate Windows acceptance evidence
+        shell: pwsh
+        run: .\Build\Validate-WindowsAcceptance.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
@@ -113,9 +117,18 @@ jobs:
         shell: pwsh
         run: dotnet test .\AIWordPressManager.sln -c Debug --no-build --nologo --filter "FullyQualifiedName!~UI" --logger "trx;LogFileName=stability-tests.trx"
 
-      - name: Smoke-test Startup and Login window
+      - name: Generate Windows acceptance evidence
         shell: pwsh
-        run: .\Build\Smoke-Test-DesktopStartup.ps1 -Configuration Debug -ObservationSeconds 20
+        run: .\Build\Invoke-WindowsAcceptance.ps1 -Configuration Debug -ObservationSeconds 20 -OutputDirectory AcceptanceResults -SourceBranch "${{ github.head_ref || github.ref_name }}" -SourceCommit "${{ github.sha }}"
+
+      - name: Upload Windows acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-acceptance-results-${{ github.run_number }}
+          path: AcceptanceResults
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload test results
         if: always()
