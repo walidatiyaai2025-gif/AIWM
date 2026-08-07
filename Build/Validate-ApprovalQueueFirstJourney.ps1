@@ -20,6 +20,8 @@ $gate = Get-Content -LiteralPath $gatePath -Raw
 $sidebar = Get-Content -LiteralPath $sidebarPath -Raw
 
 foreach ($token in @(
+    'using AIWordPressManager.Application.Changes;',
+    'IReadOnlyList<SuggestedChangeItem>',
     'ApprovalJourneyRequirements',
     'IsApprovalJourneyReady',
     'RefreshApprovalJourneyReadinessAsync',
@@ -68,4 +70,4 @@ foreach ($token in @(
     if (-not $sidebar.Contains($token)) { throw "First journey sidebar is missing Approval Queue token: $token" }
 }
 
-Write-Host 'Approval Queue decisions, execution readiness, navigation gate and sidebar contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Approval Queue decisions, application contract import, execution readiness, navigation gate and sidebar contracts validated successfully.' -ForegroundColor Green
