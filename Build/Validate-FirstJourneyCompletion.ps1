@@ -42,14 +42,24 @@ foreach ($token in @(
     'Refresh verification',
     'Review Evidence Center',
     'main.IsFirstJourneyCompleted',
-    'FirstJourneyCompletionSummary',
-    '_refreshing'
+    'ContinueJourneyCommand',
+    'StartOptimizationCommand',
+    'FindButtonForCommand',
+    'ReferenceEquals',
+    'MaximumInstallAttempts',
+    'DispatcherPriority.Loaded',
+    '_refreshing',
+    '_installScheduled'
 )) {
     if (-not $experience.Contains($token)) { throw "Journey completion UI is missing token: $token" }
+}
+
+if (-not $experience.Contains('Guided optimization workflow')) {
+    throw 'Journey completion UI must retain a text fallback after command-based discovery.'
 }
 
 if (-not $evidence.Contains('IsFirstJourneyReady')) {
     throw 'Evidence Center does not expose final journey readiness.'
 }
 
-Write-Host 'First journey completion summary, receipt, evidence, navigation and refresh contracts validated successfully.' -ForegroundColor Green
+Write-Host 'First journey completion summary, localization-safe discovery, receipt, evidence, navigation and refresh contracts validated successfully.' -ForegroundColor Green
