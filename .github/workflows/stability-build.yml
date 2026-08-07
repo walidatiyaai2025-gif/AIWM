@@ -97,6 +97,10 @@ jobs:
         shell: pwsh
         run: .\Build\Validate-HelpSupportPanel.ps1
 
+      - name: Validate unified failure recovery experience
+        shell: pwsh
+        run: .\Build\Validate-FailureRecoveryExperience.ps1
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\AIWordPressManager.sln --force --nologo
