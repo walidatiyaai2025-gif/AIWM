@@ -3,7 +3,7 @@
 Last updated: 2026-08-07  
 Current desktop version: 2.3.1  
 Default branch: `main`  
-Baseline commit: `b111e2fd027cf64fb949ca48801183ef711aeee0`
+Baseline commit: `99266dd6686c4fbe2824f7b4e9990775b579c7b2`
 
 ## Current milestone
 
@@ -43,6 +43,7 @@ The merge baseline passed:
 - Terminal executions produce HTML and JSON receipts.
 - Recent receipts are restored and exposed in Evidence Center.
 - Support bundles redact known secrets and include SHA-256 verification.
+- Windows CI produces JSON and Markdown startup acceptance evidence with executable SHA-256 and build identity; artifacts are retained for 14 days.
 
 ### Still requires operator acceptance
 
