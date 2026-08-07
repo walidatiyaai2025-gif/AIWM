@@ -32,7 +32,7 @@ foreach ($token in @(
     'STEP 2 · COMPLETE WORDPRESS SNAPSHOT', 'Explorer.FirstJourneyStatus',
     'Explorer.FirstJourneyRequirements', 'Explorer.ProgressPercent',
     'Explorer.RefreshCommand', 'Explorer.CancelCommand', 'Continue to SEO Audit',
-    'CommandParameter = "SEO Audit"', 'Explorer.IsFirstJourneyReady',
+    'BuildButton("Continue to SEO Audit", "NavigateCommand", "SEO Audit"', 'Explorer.IsFirstJourneyReady',
     'FindButtonForCommand', 'ReferenceEquals(button.Command, expected)'
 )) {
     if (-not $experience.Contains($token)) { throw "Explorer journey UI contract is missing: $token" }
