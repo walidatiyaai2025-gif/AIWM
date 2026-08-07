@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Threading;
@@ -52,11 +53,28 @@ namespace AIWordPressManager.Desktop
             {
                 if (_refreshPending || window.Dispatcher.HasShutdownStarted) return;
                 _refreshPending = true;
-                window.Dispatcher.BeginInvoke(new Action(async () =>
+                window.Dispatcher.BeginInvoke(
+                    new Action(() => _ = ApplyGateSafeAsync()),
+                    DispatcherPriority.ContextIdle);
+            }
+
+            private async Task ApplyGateSafeAsync()
+            {
+                try
+                {
+                    await ApplyGateAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    Debug.WriteLine($"Approval Queue journey gate refresh failed: {exception}");
+                }
+                finally
                 {
                     _refreshPending = false;
-                    await ApplyGateAsync();
-                }), DispatcherPriority.ContextIdle);
+                }
             }
 
             private async Task ApplyGateAsync()
