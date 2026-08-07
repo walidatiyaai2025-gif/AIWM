@@ -340,8 +340,11 @@ public partial class App : System.Windows.Application
             services.AddSingleton<GlobalErrorPresenter>();
             services.AddSingleton<MainWindowViewModel>();
             services.AddSingleton<MainWindow>();
+            services.AddSingleton<AIWordPressManager.Desktop.Services.Sites.ICurrentSiteContext, AIWordPressManager.Desktop.Services.Sites.CurrentSiteContext>();
+            services.AddSingleton<AIWordPressManager.Desktop.Services.Sites.ISiteOperationGuard, AIWordPressManager.Desktop.Services.Sites.SiteOperationGuard>();
+            services.AddSingleton<AddSiteWizardValidator>();
+            services.AddTransient<AddSiteWizardViewModel>();
             services.AddSingleton<SitesViewModel>();
-            services.AddSingleton<AddSiteWizardViewModel>();
             services.AddSingleton<WordPressExplorerViewModel>();
             services.AddSingleton<ContentAuditViewModel>();
             services.AddSingleton<SeoAuditViewModel>();
@@ -359,6 +362,7 @@ public partial class App : System.Windows.Application
             services.AddSingleton<PostSeoEditorViewModel>();
             services.AddSingleton<ExecutionCenterViewModel>();
             services.AddSingleton<JobsViewModel>();
+            services.AddSingleton<VisualInspectionService>();
             services.AddSingleton<VisualInspectorViewModel>();
             services.AddSingleton<VisualWordPressEditorViewModel>();
             services.AddSingleton<SiteBrainViewModel>();
@@ -375,5 +379,7 @@ public partial class App : System.Windows.Application
             services.AddSingleton<ReportsViewModel>();
             services.AddSingleton<LogsViewModel>();
             services.AddSingleton<HelpViewModel>();
+            services.AddHostedService<ScheduledWordPressSyncService>();
+            services.AddSingleton<AiErrorAdvisorService>();
         });
 }
