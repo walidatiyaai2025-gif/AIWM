@@ -72,8 +72,8 @@ Assert-Tokens 'Support bundle' $content.Bundle @(
 )
 
 Assert-Tokens 'Desktop project version and build metadata' $content.Project @(
-    '<Version>2.3.0</Version>', '<AssemblyVersion>2.3.0.0</AssemblyVersion>',
-    '<FileVersion>2.3.0.0</FileVersion>', '<InformationalVersion>2.3.0</InformationalVersion>',
+    '<Version>2.3.1</Version>', '<AssemblyVersion>2.3.1.0</AssemblyVersion>',
+    '<FileVersion>2.3.1.0</FileVersion>', '<InformationalVersion>2.3.1</InformationalVersion>',
     '<AssemblyMetadata Include="SourceBranch" Value="$(SourceBranchName)" />',
     '<AssemblyMetadata Include="SourceCommit" Value="$(SourceCommitSha)" />',
     'GITHUB_HEAD_REF', 'GITHUB_REF_NAME', 'GITHUB_SHA',
@@ -90,4 +90,4 @@ if (-not $content.App.Contains('viewModel.BindExecutionReceiptStore()')) {
     throw 'The dashboard receipt binding is not initialized after workspace activation.'
 }
 
-Write-Host 'Execution receipts, version 2.3.0 build identity, support bundle, and diagnostics contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution receipts, version 2.3.1 build identity, support bundle, and diagnostics contracts validated successfully.' -ForegroundColor Green
