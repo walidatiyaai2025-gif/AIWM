@@ -37,7 +37,7 @@ public static class FailureRecoveryDialog
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Exception);
 
-        var dispatcher = Application.Current?.Dispatcher;
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
             return Task.FromResult(FailureRecoveryDecision.Closed);
 
@@ -320,8 +320,8 @@ public static class FailureRecoveryDialog
         string.Empty,
         request.Exception.ToString());
 
-    private static Window? CurrentOwner() => Application.Current?.Windows
+    private static Window? CurrentOwner() => System.Windows.Application.Current?.Windows
         .OfType<Window>()
         .FirstOrDefault(window => window.IsActive)
-        ?? Application.Current?.MainWindow;
+        ?? System.Windows.Application.Current?.MainWindow;
 }
