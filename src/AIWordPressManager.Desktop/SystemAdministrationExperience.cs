@@ -91,7 +91,7 @@ namespace AIWordPressManager.Desktop.ViewModels
                 OperationStep = "Clearing operational tables";
                 OperationDetail = $"Resetting {resetTables.Length} operational table(s); security tables remain untouched.";
 
-                await using var transaction = await connection.BeginTransactionAsync();
+                await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
                 await using (var foreignKeysOff = connection.CreateCommand())
                 {
                     foreignKeysOff.Transaction = transaction;
