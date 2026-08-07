@@ -4,12 +4,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AIWordPressManager.Desktop.ViewModels;
 
 namespace AIWordPressManager.Desktop;
 
 internal static class FirstJourneyCompletionExperience
 {
+    private const int MaximumInstallAttempts = 6;
     private static readonly ConditionalWeakTable<MainWindow, State> Attached = new();
 
     [ModuleInitializer]
@@ -31,8 +33,12 @@ internal static class FirstJourneyCompletionExperience
 
     private static Border? Install(MainWindow window, MainWindowViewModel main)
     {
-        var marker = FindText(window, "Guided optimization workflow");
-        if (marker?.Parent is not StackPanel host) return null;
+        var anchor = FindButtonForCommand(window, main.ContinueJourneyCommand)
+            ?? FindButtonForCommand(window, main.StartOptimizationCommand);
+        var host = FindStackPanelHost(anchor)
+            ?? FindText(window, "Guided optimization workflow")?.Parent as StackPanel;
+        if (host is null) return null;
+
         var existing = host.Children.OfType<Border>().FirstOrDefault(x => Equals(x.Tag, "FirstJourneyCompletionSummary"));
         if (existing is not null) return existing;
 
@@ -97,6 +103,29 @@ internal static class FirstJourneyCompletionExperience
         return button;
     }
 
+    private static Button? FindButtonForCommand(DependencyObject root, object expectedCommand)
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is Button button && ReferenceEquals(button.Command, expectedCommand)) return button;
+            var nested = FindButtonForCommand(child, expectedCommand);
+            if (nested is not null) return nested;
+        }
+        return null;
+    }
+
+    private static StackPanel? FindStackPanelHost(DependencyObject? source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is StackPanel panel) return panel;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
     private static TextBlock? FindText(DependencyObject root, string value)
     {
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
@@ -116,6 +145,8 @@ internal static class FirstJourneyCompletionExperience
     {
         private Border? _card;
         private bool _refreshing;
+        private bool _installScheduled;
+        private int _installAttempts;
 
         public void Attach()
         {
@@ -123,10 +154,21 @@ internal static class FirstJourneyCompletionExperience
             main.EvidenceCenter.PropertyChanged += OnChanged;
             main.ExecutionCenter.PropertyChanged += OnChanged;
             window.Closed += OnClosed;
-            window.Dispatcher.BeginInvoke(new Action(Refresh));
+            ScheduleRefresh();
         }
 
-        private void OnChanged(object? sender, PropertyChangedEventArgs e) => Refresh();
+        private void OnChanged(object? sender, PropertyChangedEventArgs e) => ScheduleRefresh();
+
+        private void ScheduleRefresh()
+        {
+            if (_installScheduled) return;
+            _installScheduled = true;
+            window.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _installScheduled = false;
+                Refresh();
+            }), DispatcherPriority.Loaded);
+        }
 
         private void Refresh()
         {
@@ -136,6 +178,12 @@ internal static class FirstJourneyCompletionExperience
             {
                 main.RefreshFirstJourneyCompletion();
                 _card ??= Install(window, main);
+                if (_card is null && _installAttempts++ < MaximumInstallAttempts)
+                {
+                    window.Dispatcher.BeginInvoke(new Action(ScheduleRefresh), DispatcherPriority.ContextIdle);
+                    return;
+                }
+
                 if (_card is not null)
                 {
                     var visible = main.CurrentPage.Equals("Dashboard", StringComparison.OrdinalIgnoreCase) && main.IsFirstJourneyCompleted;
