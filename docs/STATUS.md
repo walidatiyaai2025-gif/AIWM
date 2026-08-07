@@ -43,7 +43,7 @@ The merge baseline passed:
 - Terminal executions produce HTML and JSON receipts.
 - Recent receipts are restored and exposed in Evidence Center.
 - Support bundles redact known secrets and include SHA-256 verification.
-- Windows CI produces JSON and Markdown startup acceptance evidence with executable SHA-256 and build identity.
+- Windows CI produces JSON and Markdown startup acceptance evidence with executable SHA-256 and build identity; artifacts are retained for 14 days.
 
 ### Still requires operator acceptance
 
