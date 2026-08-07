@@ -1,37 +1,50 @@
-> Current build: Part 66 — Accordion Navigation + Article Generator
+# AI WordPress Manager
 
-# AI WordPress Website Manager — Phase 1 Part 19
+AI WordPress Manager is a .NET 8 WPF desktop application for managing WordPress sites through an offline-first workflow with SQLite persistence.
 
-This release builds on Part 18 and adds a global black/gold design, explicit offline-first loading, and reusable multi-select bulk operations.
+Current desktop version: **2.3.1**
+
+## First controlled journey
+
+The current baseline guides operators through:
+
+1. Dashboard
+2. Sites
+3. WordPress Explorer
+4. SEO Audit
+5. Suggested Changes
+6. Approval Queue
+7. Execution Center
+8. Evidence Center
+
+Terminal executions generate HTML and JSON receipts. The application also exposes build identity and creates sanitized support bundles containing diagnostics, recent logs, receipts, and SHA-256 integrity entries.
 
 ## Build
 
 ```powershell
 dotnet restore .\AIWordPressManager.sln
-dotnet build .\AIWordPressManager.sln -c Debug
+dotnet build .\AIWordPressManager.sln -c Debug --no-restore
 dotnet test .\AIWordPressManager.sln -c Debug --no-build
 ```
 
-## Test checklist
+For the repository-managed Windows update, build, and launch workflow:
 
-1. Open the application and verify gold text, borders, selections, tabs, inputs, and buttons across all screens.
-2. Disconnect the internet and open WordPress Explorer, Post SEO Editor, Deletion Center, Category Planner, Internal Links, and Suggested Changes. Existing SQLite data should remain available.
-3. In Post SEO Editor use Ctrl/Shift to select several items, choose only the bulk fields you want, then run Preview and apply bulk update on test content.
-4. In Deletion Center select several posts/pages and test Move selected to Trash, then Restore selected.
-5. Select multiple media items. Referenced media must be skipped; only unused media can proceed through backup and permanent deletion confirmation.
-6. In Suggested Changes or Approval Queue select multiple proposals and test bulk approval/rejection. These decisions remain local and do not execute WordPress changes.
+```powershell
+.\Build-And-Run.bat
+```
 
-No database migration is required for Part 19.
+The script targets the latest `main` branch and embeds its branch and commit identity in the desktop build.
 
+## Project documentation
 
-## Part 20 — Execution Center
-Open **Execution Center** after approving concrete changes. Use Ctrl/Shift-click for bulk execution. Only supported low/medium-risk content field changes execute directly; all others remain blocked for manual/staging workflows.
+- [Current status](docs/STATUS.md)
+- [Roadmap](docs/ROADMAP.md)
+- Release and historical implementation notes remain under the `Files` directory.
 
+## Contribution workflow
 
-## Release notes
-All release and compile-fix notes are stored in the root `Files` folder.
-
-## Part 86
-This package includes the professional dynamic color system and AI Automation readiness validation. See `Files/PART86_RELEASE_NOTES.md`.
-
-Part 135 adds protected global loading and locking for Approval/Execution workflows.
+- Start from the latest successful `main`.
+- Work on a focused feature or fix branch.
+- Open a Draft pull request.
+- Keep it Draft until required contract validation, build, test, and startup checks pass.
+- Do not treat text-token contract validation as a replacement for Windows runtime acceptance.
