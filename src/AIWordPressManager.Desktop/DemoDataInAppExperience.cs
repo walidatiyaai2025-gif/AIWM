@@ -303,7 +303,7 @@ internal sealed class DemoDataProgressWindow : Window
         finally
         {
             _stopwatch.Stop();
-            _elapsed.Text = $"Elapsed: {_stopwatch.Elapsed:hh\:mm\:ss}";
+            _elapsed.Text = $"Elapsed: {_stopwatch.Elapsed:hh\\:mm\\:ss}";
             _startButton.IsEnabled = true;
             _closeButton.IsEnabled = true;
         }
@@ -322,7 +322,7 @@ internal sealed class DemoDataProgressWindow : Window
         _stage.Text = $"{value.Percent:N1}% — {value.Stage}";
         _details.Text = value.Details;
         _records.Text = $"Records created/refreshed: {value.RecordsCreated} / {value.TotalOperations}";
-        _elapsed.Text = $"Elapsed: {_stopwatch.Elapsed:hh\:mm\:ss}";
+        _elapsed.Text = $"Elapsed: {_stopwatch.Elapsed:hh\\:mm\\:ss}";
 
         if (!string.IsNullOrWhiteSpace(value.LogLine))
             AppendLog($"[{DateTime.Now:HH:mm:ss}] {value.LogLine}");
