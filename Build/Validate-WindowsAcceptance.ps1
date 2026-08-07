@@ -29,10 +29,21 @@ foreach ($token in @(
     'DesktopSha256',
     'SmokeOutput',
     'Failure',
+    '$codeFence',
+    '${codeFence}text',
     'Windows acceptance evidence completed successfully.'
 )) {
     if (-not $runner.Contains($token)) {
         throw "Windows acceptance runner is missing contract token: $token"
+    }
+}
+
+foreach ($unsafeToken in @(
+    '`$reportId`',
+    '```text'
+)) {
+    if ($runner.Contains($unsafeToken)) {
+        throw "Windows acceptance runner contains an unsafe expandable here-string token: $unsafeToken"
     }
 }
 

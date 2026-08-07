@@ -110,31 +110,32 @@ $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $jsonPath -Encoding
 $failureText = if ([string]::IsNullOrWhiteSpace($failure)) { "None" } else { $failure }
 $hashText = if ([string]::IsNullOrWhiteSpace($executableHash)) { "Unavailable" } else { $executableHash }
 $versionText = if ([string]::IsNullOrWhiteSpace($fileVersion)) { "Unavailable" } else { $fileVersion }
+$codeFence = '```'
 $markdown = @"
 # Windows Acceptance Evidence
 
 - Status: **$status**
-- Report ID: `$reportId`
-- Started UTC: `$($startedAtUtc.ToString("O"))`
-- Completed UTC: `$($completedAtUtc.ToString("O"))`
-- Configuration: `$Configuration`
-- Source branch: `$SourceBranch`
-- Source commit: `$SourceCommit`
-- Desktop version: `$versionText`
-- Desktop SHA-256: `$hashText`
-- OS: `$([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)`
+- Report ID: $reportId
+- Started UTC: $($startedAtUtc.ToString("O"))
+- Completed UTC: $($completedAtUtc.ToString("O"))
+- Configuration: $Configuration
+- Source branch: $SourceBranch
+- Source commit: $SourceCommit
+- Desktop version: $versionText
+- Desktop SHA-256: $hashText
+- OS: $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)
 
 ## Startup smoke output
 
-```text
+${codeFence}text
 $smokeOutput
-```
+$codeFence
 
 ## Failure
 
-```text
+${codeFence}text
 $failureText
-```
+$codeFence
 "@
 Set-Content -LiteralPath $markdownPath -Value $markdown -Encoding UTF8
 
