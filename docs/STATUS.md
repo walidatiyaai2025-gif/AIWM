@@ -3,7 +3,7 @@
 Last updated: 2026-08-07  
 Current desktop version: 2.3.1  
 Default branch: `main`  
-Baseline commit: `99266dd6686c4fbe2824f7b4e9990775b579c7b2`
+Baseline commit: `12c0d2675c198078602c3d0f0cc58d063b45c594`
 
 ## Current milestone
 
@@ -44,6 +44,7 @@ The merge baseline passed:
 - Recent receipts are restored and exposed in Evidence Center.
 - Support bundles redact known secrets and include SHA-256 verification.
 - Windows CI produces JSON and Markdown startup acceptance evidence with executable SHA-256 and build identity; artifacts are retained for 14 days.
+- A release-candidate validation and operator sign-off checklist is available in `docs/RELEASE_CANDIDATE_CHECKLIST.md`.
 
 ### Still requires operator acceptance
 
