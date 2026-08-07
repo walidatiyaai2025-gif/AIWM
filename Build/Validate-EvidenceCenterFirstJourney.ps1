@@ -32,10 +32,10 @@ foreach ($token in @(
 foreach ($token in @(
     'AIWordPressManager',
     'Receipts',
-    'ExecutionReceipt_*.html',
-    'ExecutionReceipt_*.json',
+    'Directory.EnumerateFiles(receiptsDirectory, "*", SearchOption.TopDirectoryOnly)',
+    'Path.GetExtension(path) is ".html" or ".json"',
     'MergeExecutionReceipts',
-    'DistinctBy',
+    'existingPaths.Contains(path)',
     'OrderByDescending'
 )) {
     if (-not $receipts.Contains($token)) { throw "Evidence receipt integration is missing token: $token" }
