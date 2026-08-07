@@ -39,9 +39,16 @@ foreach ($token in @(
 
 foreach ($token in @(
     'ExecutionCenterJourneyGateCoordinator', 'ExecutionCenter.RefreshFirstJourneyReadiness',
-    'SuggestedChanges.IsApprovalJourneyReady', 'ApplyExecutionCenterJourneyGate', 'CurrentJourneyTarget = "Execution Center"'
+    'SuggestedChanges.IsApprovalJourneyReady', 'ApplyExecutionCenterJourneyGate', 'CurrentJourneyTarget = "Execution Center"',
+    'private bool _isApplying;', 'if (_isApplying) return;', 'finally', '_isApplying = false;',
+    'nameof(ExecutionCenterViewModel.QueueState)', 'nameof(ExecutionCenterViewModel.LatestReceiptPath)',
+    'nameof(ExecutionCenterViewModel.BeforeEvidencePath)', 'nameof(ExecutionCenterViewModel.AfterEvidencePath)'
 )) {
     if (-not $gate.Contains($token)) { throw "Execution journey gate is missing contract token: $token" }
+}
+
+if ($gate.Contains('private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e) => ApplyGate();')) {
+    throw 'Execution journey gate must filter PropertyChanged events to prevent recursive readiness refresh.'
 }
 
 foreach ($token in @('WriteExecutionReceiptSafeAsync', 'LatestReceiptPath', 'IsReceiptTerminalState', 'ExecutionReceiptDocument')) {
@@ -52,4 +59,4 @@ foreach ($token in @('ExecuteSelectedCommand', 'ExecuteAllReadyCommand', 'Rollba
     if (-not $center.Contains($token)) { throw "Execution Center is missing workflow contract: $token" }
 }
 
-Write-Host 'Execution Center first journey, terminal state, evidence, and receipt contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Execution Center first journey, reentrancy protection, terminal state, evidence, and receipt contracts validated successfully.' -ForegroundColor Green
