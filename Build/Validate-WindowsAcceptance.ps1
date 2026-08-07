@@ -51,6 +51,7 @@ foreach ($token in @(
     'Validate Windows acceptance evidence',
     'Generate Windows acceptance evidence',
     'Invoke-WindowsAcceptance.ps1',
+    'github.event.pull_request.head.sha',
     'windows-acceptance-results',
     'AcceptanceResults',
     'if: always()'

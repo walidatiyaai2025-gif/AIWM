@@ -119,7 +119,7 @@ jobs:
 
       - name: Generate Windows acceptance evidence
         shell: pwsh
-        run: .\Build\Invoke-WindowsAcceptance.ps1 -Configuration Debug -ObservationSeconds 20 -OutputDirectory AcceptanceResults -SourceBranch "${{ github.head_ref || github.ref_name }}" -SourceCommit "${{ github.sha }}"
+        run: .\Build\Invoke-WindowsAcceptance.ps1 -Configuration Debug -ObservationSeconds 20 -OutputDirectory AcceptanceResults -SourceBranch "${{ github.head_ref || github.ref_name }}" -SourceCommit "${{ github.event.pull_request.head.sha || github.sha }}"
 
       - name: Upload Windows acceptance evidence
         if: always()
