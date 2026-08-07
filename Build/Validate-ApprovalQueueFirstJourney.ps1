@@ -47,9 +47,17 @@ foreach ($token in @(
     'SuggestedChanges.IsApprovalJourneyReady',
     'ApprovalPendingCount',
     'ApprovalApprovedCount',
-    'ApprovalRejectedCount'
+    'ApprovalRejectedCount',
+    'RefreshSafeAsync',
+    'catch (Exception exception)',
+    '_refreshRunning',
+    '_closed'
 )) {
     if (-not $experience.Contains($token)) { throw "Approval Queue journey UI is missing token: $token" }
+}
+
+if ($experience.Contains('new Action(async')) {
+    throw 'Approval Queue experience must not use an async-void Dispatcher callback.'
 }
 
 foreach ($token in @(
@@ -78,4 +86,4 @@ foreach ($token in @(
     if (-not $sidebar.Contains($token)) { throw "First journey sidebar is missing Approval Queue token: $token" }
 }
 
-Write-Host 'Approval Queue decisions, imports, exception-safe async refresh, execution readiness, navigation gate and sidebar contracts validated successfully.' -ForegroundColor Green
+Write-Host 'Approval Queue startup safety, decisions, imports, exception-safe refresh, navigation gate and sidebar contracts validated successfully.' -ForegroundColor Green
