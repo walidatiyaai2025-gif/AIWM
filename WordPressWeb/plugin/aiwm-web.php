@@ -17,6 +17,7 @@ final class AIWM_Web_Edition
     private const VERSION = '0.1.0-dev';
     private const REST_NAMESPACE = 'aiwm/v1';
     private const CAPABILITY = 'manage_aiwm';
+    private const SITE_AUTH_TYPES = ['application_password', 'connector'];
 
     public static function boot(): void
     {
@@ -209,9 +210,45 @@ final class AIWM_Web_Edition
             'callback' => [self::class, 'rest_dashboard'],
             'permission_callback' => [self::class, 'rest_can_read'],
         ]);
+
+        register_rest_route(self::REST_NAMESPACE, '/sites', [
+            [
+                'methods' => WP_REST_Server::READABLE,
+                'callback' => [self::class, 'rest_sites_index'],
+                'permission_callback' => [self::class, 'rest_can_read'],
+            ],
+            [
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => [self::class, 'rest_sites_create'],
+                'permission_callback' => [self::class, 'rest_can_mutate'],
+            ],
+        ]);
+
+        register_rest_route(self::REST_NAMESPACE, '/sites/(?P<id>\d+)', [
+            [
+                'methods' => WP_REST_Server::READABLE,
+                'callback' => [self::class, 'rest_sites_show'],
+                'permission_callback' => [self::class, 'rest_can_read'],
+            ],
+            [
+                'methods' => WP_REST_Server::EDITABLE,
+                'callback' => [self::class, 'rest_sites_update'],
+                'permission_callback' => [self::class, 'rest_can_mutate'],
+            ],
+            [
+                'methods' => WP_REST_Server::DELETABLE,
+                'callback' => [self::class, 'rest_sites_delete'],
+                'permission_callback' => [self::class, 'rest_can_mutate'],
+            ],
+        ]);
     }
 
     public static function rest_can_read(): bool
+    {
+        return current_user_can(self::CAPABILITY);
+    }
+
+    public static function rest_can_mutate(): bool
     {
         return current_user_can(self::CAPABILITY);
     }
@@ -258,6 +295,293 @@ final class AIWM_Web_Edition
             ],
             'generatedAt' => gmdate('c'),
         ]);
+    }
+
+    public static function rest_sites_index(WP_REST_Request $request): WP_REST_Response
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'aiwm_sites';
+        $page = max(1, (int) $request->get_param('page'));
+        $perPage = min(100, max(1, (int) ($request->get_param('per_page') ?: 25)));
+        $offset = ($page - 1) * $perPage;
+        $status = sanitize_key((string) $request->get_param('status'));
+        $search = sanitize_text_field((string) $request->get_param('search'));
+
+        $where = [];
+        $args = [];
+
+        if ($status !== '') {
+            $allowedStatuses = ['pending', 'verified', 'failed', 'disabled'];
+            if (!in_array($status, $allowedStatuses, true)) {
+                return new WP_REST_Response(['code' => 'invalid_status', 'message' => 'Unsupported site status.'], 400);
+            }
+            $where[] = 'status = %s';
+            $args[] = $status;
+        }
+
+        if ($search !== '') {
+            $like = '%' . $wpdb->esc_like($search) . '%';
+            $where[] = '(name LIKE %s OR base_url LIKE %s)';
+            $args[] = $like;
+            $args[] = $like;
+        }
+
+        $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+        $countSql = "SELECT COUNT(*) FROM {$table}{$whereSql}";
+        $total = $args
+            ? (int) $wpdb->get_var($wpdb->prepare($countSql, $args))
+            : (int) $wpdb->get_var($countSql);
+
+        $queryArgs = $args;
+        $queryArgs[] = $perPage;
+        $queryArgs[] = $offset;
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, name, base_url, status, auth_type, last_verified_at, created_at, updated_at
+                 FROM {$table}{$whereSql}
+                 ORDER BY id DESC
+                 LIMIT %d OFFSET %d",
+                $queryArgs
+            ),
+            ARRAY_A
+        );
+
+        $response = new WP_REST_Response([
+            'items' => array_map([self::class, 'public_site_row'], $rows ?: []),
+            'page' => $page,
+            'perPage' => $perPage,
+            'total' => $total,
+            'totalPages' => $perPage > 0 ? (int) ceil($total / $perPage) : 0,
+        ]);
+        $response->header('X-WP-Total', (string) $total);
+        $response->header('X-WP-TotalPages', (string) ($perPage > 0 ? (int) ceil($total / $perPage) : 0));
+
+        return $response;
+    }
+
+    public static function rest_sites_show(WP_REST_Request $request)
+    {
+        $row = self::find_site((int) $request['id']);
+        if (!$row) {
+            return new WP_Error('aiwm_site_not_found', 'Managed site not found.', ['status' => 404]);
+        }
+
+        return new WP_REST_Response(self::public_site_row($row));
+    }
+
+    public static function rest_sites_create(WP_REST_Request $request)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'aiwm_sites';
+
+        $payload = self::site_payload($request, true);
+        if (is_wp_error($payload)) {
+            return $payload;
+        }
+
+        $existing = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE base_url = %s LIMIT 1", $payload['base_url']));
+        if ($existing) {
+            return new WP_Error('aiwm_site_exists', 'This WordPress site is already managed.', ['status' => 409]);
+        }
+
+        $now = current_time('mysql', true);
+        $inserted = $wpdb->insert(
+            $table,
+            [
+                'name' => $payload['name'],
+                'base_url' => $payload['base_url'],
+                'status' => 'pending',
+                'auth_type' => $payload['auth_type'],
+                'credential_ref' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s']
+        );
+
+        if ($inserted !== 1) {
+            return new WP_Error('aiwm_site_create_failed', 'Unable to create managed site.', ['status' => 500]);
+        }
+
+        $row = self::find_site((int) $wpdb->insert_id);
+        return new WP_REST_Response(self::public_site_row($row), 201);
+    }
+
+    public static function rest_sites_update(WP_REST_Request $request)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'aiwm_sites';
+        $id = (int) $request['id'];
+        $existing = self::find_site($id);
+
+        if (!$existing) {
+            return new WP_Error('aiwm_site_not_found', 'Managed site not found.', ['status' => 404]);
+        }
+
+        $payload = self::site_payload($request, false);
+        if (is_wp_error($payload)) {
+            return $payload;
+        }
+
+        $changes = ['updated_at' => current_time('mysql', true)];
+        $formats = ['%s'];
+
+        foreach (['name', 'base_url', 'auth_type'] as $field) {
+            if (array_key_exists($field, $payload)) {
+                $changes[$field] = $payload[$field];
+                $formats[] = '%s';
+            }
+        }
+
+        if (isset($changes['base_url']) && $changes['base_url'] !== $existing['base_url']) {
+            $duplicate = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT id FROM {$table} WHERE base_url = %s AND id <> %d LIMIT 1",
+                    $changes['base_url'],
+                    $id
+                )
+            );
+            if ($duplicate) {
+                return new WP_Error('aiwm_site_exists', 'This WordPress site is already managed.', ['status' => 409]);
+            }
+
+            $changes['status'] = 'pending';
+            $changes['last_verified_at'] = null;
+            $formats[] = '%s';
+            $formats[] = '%s';
+        }
+
+        if (count($changes) === 1) {
+            return new WP_REST_Response(self::public_site_row($existing));
+        }
+
+        $updated = $wpdb->update($table, $changes, ['id' => $id], $formats, ['%d']);
+        if ($updated === false) {
+            return new WP_Error('aiwm_site_update_failed', 'Unable to update managed site.', ['status' => 500]);
+        }
+
+        return new WP_REST_Response(self::public_site_row(self::find_site($id)));
+    }
+
+    public static function rest_sites_delete(WP_REST_Request $request)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'aiwm_sites';
+        $id = (int) $request['id'];
+        $existing = self::find_site($id);
+
+        if (!$existing) {
+            return new WP_Error('aiwm_site_not_found', 'Managed site not found.', ['status' => 404]);
+        }
+
+        $dependentTables = ['audits', 'recommendations', 'jobs', 'executions', 'evidence'];
+        foreach ($dependentTables as $suffix) {
+            $dependent = $wpdb->prefix . 'aiwm_' . $suffix;
+            $count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$dependent} WHERE site_id = %d", $id));
+            if ($count > 0) {
+                return new WP_Error(
+                    'aiwm_site_has_history',
+                    'Managed site cannot be removed while audit, execution, job, or evidence history exists.',
+                    ['status' => 409]
+                );
+            }
+        }
+
+        $deleted = $wpdb->delete($table, ['id' => $id], ['%d']);
+        if ($deleted !== 1) {
+            return new WP_Error('aiwm_site_delete_failed', 'Unable to remove managed site.', ['status' => 500]);
+        }
+
+        return new WP_REST_Response(['deleted' => true, 'id' => $id]);
+    }
+
+    private static function site_payload(WP_REST_Request $request, bool $creating)
+    {
+        $payload = [];
+
+        if ($creating || $request->has_param('name')) {
+            $name = sanitize_text_field((string) $request->get_param('name'));
+            if ($name === '') {
+                return new WP_Error('aiwm_invalid_site_name', 'Site name is required.', ['status' => 400]);
+            }
+            if (strlen($name) > 190) {
+                return new WP_Error('aiwm_invalid_site_name', 'Site name is too long.', ['status' => 400]);
+            }
+            $payload['name'] = $name;
+        }
+
+        if ($creating || $request->has_param('base_url')) {
+            $baseUrl = self::normalize_base_url((string) $request->get_param('base_url'));
+            if (is_wp_error($baseUrl)) {
+                return $baseUrl;
+            }
+            $payload['base_url'] = $baseUrl;
+        }
+
+        if ($creating || $request->has_param('auth_type')) {
+            $authType = sanitize_key((string) ($request->get_param('auth_type') ?: 'application_password'));
+            if (!in_array($authType, self::SITE_AUTH_TYPES, true)) {
+                return new WP_Error('aiwm_invalid_auth_type', 'Unsupported authentication type.', ['status' => 400]);
+            }
+            $payload['auth_type'] = $authType;
+        }
+
+        return $payload;
+    }
+
+    private static function normalize_base_url(string $url)
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return new WP_Error('aiwm_invalid_site_url', 'Site URL is required.', ['status' => 400]);
+        }
+
+        $url = esc_url_raw($url, ['http', 'https']);
+        if (!$url || !wp_http_validate_url($url)) {
+            return new WP_Error('aiwm_invalid_site_url', 'Enter a valid HTTP or HTTPS WordPress URL.', ['status' => 400]);
+        }
+
+        $parts = wp_parse_url($url);
+        if (!$parts || empty($parts['scheme']) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+            return new WP_Error('aiwm_invalid_site_url', 'Site URL must not contain embedded credentials.', ['status' => 400]);
+        }
+
+        return untrailingslashit($url);
+    }
+
+    private static function find_site(int $id): ?array
+    {
+        global $wpdb;
+        if ($id < 1) {
+            return null;
+        }
+
+        $table = $wpdb->prefix . 'aiwm_sites';
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, name, base_url, status, auth_type, last_verified_at, created_at, updated_at
+                 FROM {$table}
+                 WHERE id = %d",
+                $id
+            ),
+            ARRAY_A
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private static function public_site_row(array $row): array
+    {
+        return [
+            'id' => (int) $row['id'],
+            'name' => (string) $row['name'],
+            'baseUrl' => (string) $row['base_url'],
+            'status' => (string) $row['status'],
+            'authType' => (string) $row['auth_type'],
+            'lastVerifiedAt' => $row['last_verified_at'] ?: null,
+            'createdAt' => (string) $row['created_at'],
+            'updatedAt' => (string) $row['updated_at'],
+        ];
     }
 }
 
