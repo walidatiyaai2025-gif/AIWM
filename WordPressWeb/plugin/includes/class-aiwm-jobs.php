@@ -123,13 +123,21 @@ final class AIWM_Web_Jobs
         $sites = AIWM_Web_Store::table('sites');
         $execution = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$executions} WHERE id=%d", $execution_id), ARRAY_A);
         if (!$execution) { throw new RuntimeException('Execution record not found.'); }
-        $site = $wpdb->get_row($wpdb->prepare("SELECT id,status,identity_fingerprint FROM {$sites} WHERE id=%d", $execution['site_id']), ARRAY_A);
+        $site = $wpdb->get_row($wpdb->prepare("SELECT id,name,base_url,status,auth_type,credential_ref,identity_fingerprint FROM {$sites} WHERE id=%d", $execution['site_id']), ARRAY_A);
         $change = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$changes} WHERE id=%d", $execution['suggested_change_id']), ARRAY_A);
         $approval = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$approvals} WHERE id=%d", $execution['approval_decision_id']), ARRAY_A);
         if (!$site || $site['status'] !== 'verified' || empty($site['identity_fingerprint'])) { throw new RuntimeException('Target site identity is not verified.'); }
         if (!hash_equals((string) $execution['target_identity_hash'], (string) $site['identity_fingerprint'])) { throw new RuntimeException('Target site identity changed after approval.'); }
         if (!$change || !$approval || $approval['decision'] !== 'approved' || !hash_equals((string) $approval['decision_version_hash'], (string) $change['version_hash'])) { throw new RuntimeException('Approval is missing, stale, or does not match the proposed change.'); }
         if (empty($execution['before_json'])) { throw new RuntimeException('Before-state evidence is required.'); }
+
+        $identity = apply_filters('aiwm_web_verify_site_identity', null, $site, $execution);
+        if (!is_array($identity) || empty($identity['fingerprint'])) { throw new RuntimeException('No live target identity verifier is registered for this execution.'); }
+        if (!hash_equals((string) $site['identity_fingerprint'], (string) $identity['fingerprint'])) { throw new RuntimeException('Live target identity does not match the approved site identity.'); }
+        AIWM_Web_Store::add_evidence((int) $execution['site_id'], $execution_id, 'identity_recheck', [
+            'fingerprint' => (string) $identity['fingerprint'],
+            'verified_at' => gmdate('c'),
+        ]);
 
         $adapter = apply_filters('aiwm_web_execute_change', null, $execution, $site, $change, $approval);
         if (!is_array($adapter)) { throw new RuntimeException('No remote mutation adapter is registered for this execution.'); }
@@ -157,7 +165,7 @@ final class AIWM_Web_Jobs
             'created_at' => AIWM_Web_Store::now(),
         ]);
         AIWM_Web_Store::invalidate_dashboard();
-        return ['done' => true, 'status' => $status, 'current' => 1, 'total' => 1, 'error' => $error];
+        return ['done' => true, 'status' => $status === 'partially_failed' ? 'partially_failed' : ($status === 'cancelled' ? 'cancelled' : ($status === 'completed' ? 'completed' : 'failed')), 'current' => 1, 'total' => 1, 'error' => $error];
     }
 
     private static function apply_result(array $job, array $result): void
@@ -210,14 +218,23 @@ final class AIWM_Web_Jobs
         $table = AIWM_Web_Store::table('executions');
         $execution = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id=%d", $execution_id), ARRAY_A);
         if (!$execution || in_array($execution['status'], ['completed','failed','partially_failed','cancelled'], true)) { return; }
-        $wpdb->update($table, ['status' => $status, 'error_json' => AIWM_Web_Store::json($error), 'completed_at' => AIWM_Web_Store::now()], ['id' => $execution_id]);
+        $wpdb->update($table, [
+            'status' => $status,
+            'error_json' => AIWM_Web_Store::json($error),
+            'completed_at' => AIWM_Web_Store::now(),
+        ], ['id' => $execution_id]);
         $evidence_payload = ['status' => $status, 'error' => $error];
         AIWM_Web_Store::add_evidence((int) $execution['site_id'], $execution_id, 'execution_terminal', $evidence_payload);
         $wpdb->insert(AIWM_Web_Store::table('receipts'), [
-            'execution_id' => $execution_id, 'site_id' => (int) $execution['site_id'], 'status' => $status,
-            'receipt_uuid' => wp_generate_uuid4(), 'before_hash' => hash('sha256', (string) ($execution['before_json'] ?? '')),
-            'after_hash' => null, 'evidence_hash' => AIWM_Web_Store::hash_payload($evidence_payload),
-            'summary_json' => AIWM_Web_Store::json(['error' => $error]), 'created_at' => AIWM_Web_Store::now(),
+            'execution_id' => $execution_id,
+            'site_id' => (int) $execution['site_id'],
+            'status' => $status,
+            'receipt_uuid' => wp_generate_uuid4(),
+            'before_hash' => hash('sha256', (string) ($execution['before_json'] ?? '')),
+            'after_hash' => null,
+            'evidence_hash' => AIWM_Web_Store::hash_payload($evidence_payload),
+            'summary_json' => AIWM_Web_Store::json(['error' => $error]),
+            'created_at' => AIWM_Web_Store::now(),
         ]);
         AIWM_Web_Store::invalidate_dashboard();
     }
