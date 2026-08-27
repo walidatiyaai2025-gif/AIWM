@@ -1,0 +1,94 @@
+name: WordPress Web Validation
+
+on:
+  pull_request:
+    branches:
+      - variant/wordpress-web-demo
+    paths:
+      - 'WordPressWeb/**'
+      - '.github/workflows/wpweb-validation.yml'
+  push:
+    branches:
+      - variant/wordpress-web-demo
+    paths:
+      - 'WordPressWeb/**'
+      - '.github/workflows/wpweb-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wpweb-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: PHP, JS, dead-control and package validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.1
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Lint WordPress Web PHP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f WordPressWeb/plugin/aiwm-web.php
+          while IFS= read -r -d '' file; do
+            php -l "$file"
+          done < <(find WordPressWeb/plugin -type f -name '*.php' -print0)
+
+      - name: Validate browser JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f WordPressWeb/plugin/assets/admin.js ]; then
+            node --check WordPressWeb/plugin/assets/admin.js
+          fi
+
+      - name: Reject obvious dead controls and browser-secret wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE --include='*.php' --include='*.js' --include='*.html' 'href=["'"']#["'"']|javascript:[[:space:]]*(void\(0\)|;)' WordPressWeb/plugin; then
+            echo 'Dead href/javascript control detected in WordPress Web plugin.' >&2
+            exit 1
+          fi
+          if grep -RInE --include='*.js' 'AIWM_(GEMINI|OPENAI)_API_KEY|provider[_-]?api[_-]?key' WordPressWeb/plugin/assets 2>/dev/null; then
+            echo 'Provider secret reference detected in browser assets.' >&2
+            exit 1
+          fi
+
+      - name: Build installable plugin ZIP candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .wpweb-package
+          mkdir -p .wpweb-package/aiwm-web dist
+          cp -R WordPressWeb/plugin/. .wpweb-package/aiwm-web/
+          (cd .wpweb-package && zip -qr ../dist/aiwm-web-${GITHUB_SHA}.zip aiwm-web)
+          test -s "dist/aiwm-web-${GITHUB_SHA}.zip"
+          unzip -t "dist/aiwm-web-${GITHUB_SHA}.zip"
+          unzip -l "dist/aiwm-web-${GITHUB_SHA}.zip" | grep -q 'aiwm-web/aiwm-web.php'
+
+      - name: Upload plugin ZIP candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiwm-web-plugin-${{ github.sha }}
+          path: dist/aiwm-web-${{ github.sha }}.zip
+          if-no-files-found: error
+          retention-days: 7
