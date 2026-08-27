@@ -12,6 +12,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/includes/class-aiwm-web-gemini-provider.php';
+require_once __DIR__ . '/includes/class-aiwm-functional-journey.php';
+
 final class AIWM_Web_Edition
 {
     private const VERSION = '0.1.0-dev';
@@ -262,3 +265,4 @@ final class AIWM_Web_Edition
 }
 
 AIWM_Web_Edition::boot();
+AIWM_Web_Functional_Journey::boot();
