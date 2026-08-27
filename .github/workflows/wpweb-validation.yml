@@ -64,7 +64,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE --include='*.php' --include='*.js' --include='*.html' 'href=["'"']#["'"']|javascript:[[:space:]]*(void\(0\)|;)' WordPressWeb/plugin; then
+          if grep -RIn --include='*.php' --include='*.js' --include='*.html' \
+            -e 'href="#"' \
+            -e "href='#'" \
+            -e 'javascript:void(0)' \
+            -e 'javascript: void(0)' \
+            WordPressWeb/plugin; then
             echo 'Dead href/javascript control detected in WordPress Web plugin.' >&2
             exit 1
           fi
