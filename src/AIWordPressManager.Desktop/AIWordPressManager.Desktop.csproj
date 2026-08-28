@@ -3,47 +3,48 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\Brand\app_icon.ico</ApplicationIcon>
+    <AssemblyName>AIWordPressManager.Desktop</AssemblyName>
+    <RootNamespace>AIWordPressManager.Desktop</RootNamespace>
+    <Version>1.40.0</Version>
+    <AssemblyVersion>1.40.0.0</AssemblyVersion>
+    <FileVersion>1.40.0.0</FileVersion>
+    <InformationalVersion>1.40.0-Part140</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Resource Include="Assets\Brand\*.png" />
-    <Resource Include="Assets\Brand\app_icon.ico" />
-  </ItemGroup>
-  <ItemGroup>
+    <ProjectReference Include="..\AIWordPressManager.AI\AIWordPressManager.AI.csproj" />
     <ProjectReference Include="..\AIWordPressManager.Application\AIWordPressManager.Application.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Automation\AIWordPressManager.Automation.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.Domain\AIWordPressManager.Domain.csproj" />
     <ProjectReference Include="..\AIWordPressManager.Infrastructure\AIWordPressManager.Infrastructure.csproj" />
     <ProjectReference Include="..\AIWordPressManager.Persistence\AIWordPressManager.Persistence.csproj" />
-    <ProjectReference Include="..\AIWordPressManager.WordPress\AIWordPressManager.WordPress.csproj" />
-    <ProjectReference Include="..\AIWordPressManager.AI\AIWordPressManager.AI.csproj" />
-    <ProjectReference Include="..\AIWordPressManager.Automation\AIWordPressManager.Automation.csproj" />
     <ProjectReference Include="..\AIWordPressManager.Reporting\AIWordPressManager.Reporting.csproj" />
+    <ProjectReference Include="..\AIWordPressManager.WordPress\AIWordPressManager.WordPress.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Web.WebView2" />
     <PackageReference Include="Serilog.Extensions.Hosting" />
     <PackageReference Include="Serilog.Settings.Configuration" />
+    <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
   <ItemGroup>
-    <None Update="Documentation\AIWordPressManager_UserGuide_AR.docx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Documentation\AIWordPressManager_System_Status_Roadmap_AR.docx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Documentation\UserGuideSource.md">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\WordPressPlugins\**\*" Link="WordPressPlugins\%(RecursiveDir)%(Filename)%(Extension)">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </None>
+    <Content Include="Assets\Brand\app_icon_32.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Brand\app_icon_64.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Brand\app_icon_128.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Brand\app_icon_256.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Brand\app_icon_512.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Brand\brand_wordmark.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Documentation\AIWordPressManager_UserGuide_AR.docx" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Documentation\AIWordPressManager_System_Status_Roadmap_AR.docx" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
